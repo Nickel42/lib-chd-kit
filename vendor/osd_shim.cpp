@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// Minimal OSD shim for libchdman.
+// Minimal OSD shim for lib-chd-kit.
 //
 // MAME's osdsync.cpp (work queues/threads) and the file modules need a few
 // helpers that upstream implements in src/osd/modules/lib/osdlib_*.cpp, which

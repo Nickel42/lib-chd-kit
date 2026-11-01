@@ -9,8 +9,8 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
-using LibChdman;
-using LibChdman.Interop;
+using LibChdKit;
+using LibChdKit.Interop;
 
 int checks = 0, failures = 0;
 void Check(bool ok, string what)
@@ -39,13 +39,13 @@ void Throws<T>(Action action, string what, Func<T, bool>? also = null) where T :
     }
 }
 
-var dir = Path.Combine(Path.GetTempPath(), "libchdman-dotnet-tests");
+var dir = Path.Combine(Path.GetTempPath(), "lib-chd-kit-dotnet-tests");
 if (Directory.Exists(dir))
     Directory.Delete(dir, recursive: true);
 Directory.CreateDirectory(dir);
 string P(string name) => Path.Combine(dir, name);
 
-Console.WriteLine($"libchdman {Chdman.Version}, ABI {Chdman.AbiVersion}, .NET {Environment.Version}");
+Console.WriteLine($"lib-chd-kit {Chdman.Version}, ABI {Chdman.AbiVersion}, .NET {Environment.Version}");
 
 // struct layouts must match the C sizeof values (x64 / arm64)
 Check(Marshal.SizeOf<CreateRawOptions>() == 88, "sizeof create_raw_options");

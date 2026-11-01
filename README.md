@@ -1,4 +1,4 @@
-# libchdman
+# lib-chd-kit
 
 MAME 0.289's CHD (Compressed Hunks of Data) tooling, the code behind
 `chdman`, packaged as a library with a stable C ABI for Windows 11
@@ -24,7 +24,7 @@ src/chdman_core.{h,cpp}     chdman's do_* logic as a C++ library core
 src/chdman_capi.cpp         C ABI layer (catches everything, maps to status codes)
 cli/chdman_cli.c            chdman-compatible CLI (pure C, uses only chdman.h)
 tests/                      round-trip/determinism tests, upstream parity test
-bindings/csharp/            .NET binding + NuGet package (LibChdman)
+bindings/csharp/            .NET binding + NuGet package (LibChdKit)
 bindings/swift/, Package.swift  Swift package (Chdman) over a prebuilt XCFramework
 examples/swift, examples/csharp
 scripts/make-xcframework.sh builds the XCFramework for the Swift package
@@ -51,8 +51,8 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-This produces `build/libchdman.dylib` (install name `@rpath/libchdman.1.dylib`),
-`build/libchdman.a` and `build/chdman-cli`, all universal. The deployment
+This produces `build/libchdkit.dylib` (install name `@rpath/libchdkit.1.dylib`),
+`build/libchdkit.a` and `build/chdman-cli`, all universal. The deployment
 target defaults to macOS 11.0 (`-DCMAKE_OSX_DEPLOYMENT_TARGET=...` to change).
 Without Ninja, use `-G Xcode` or the default Makefiles.
 
@@ -70,7 +70,7 @@ mkdir -p build/xcf-headers && cp include/chdman.h include/module.modulemap build
 ```
 
 ```bash
-xcodebuild -create-xcframework -library build/libchdman.a -headers build/xcf-headers -output build/Chdman.xcframework
+xcodebuild -create-xcframework -library build/libchdkit.a -headers build/xcf-headers -output build/Chdman.xcframework
 ```
 
 ### Windows 11 (MSVC x64 and ARM64)
@@ -115,15 +115,15 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-Outputs: `chdman.dll` + `chdman.lib` (import library), `chdman_static.lib`
+Outputs: `chdkit.dll` + `chdkit.lib` (import library), `chdkit_static.lib`
 and `chdman-cli.exe`.
 
 Which one to link on Windows:
 
-- **`chdman.dll` (recommended).** It uses the static CRT, so it needs no
+- **`chdkit.dll` (recommended).** It uses the static CRT, so it needs no
   VC++ redistributable, and it exports only the 60 `chdman_*` functions, so
   it can't clash with anything in your app.
-- **`chdman_static.lib`.** Define `CHDMAN_STATIC` before including
+- **`chdkit_static.lib`.** Define `CHDMAN_STATIC` before including
   `chdman.h` (the CMake target does this for you). It is built with the DLL
   CRT (`/MD`, Visual Studio's default for apps); set
   `CHDMAN_STATIC_MSVC_RUNTIME` to `MultiThreaded` if your app uses `/MT`.
@@ -148,7 +148,7 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-Outputs: `build/libchdman.so` (soname `libchdman.so.1`), `build/libchdman.a`
+Outputs: `build/libchdkit.so` (soname `libchdkit.so.1`), `build/libchdkit.a`
 and `build/chdman-cli`. The shared library exports only the 60 `chdman_*`
 functions (a linker version script, `cmake/chdman.map`, hides the rest) and
 needs the glibc and libstdc++ of the system it was built on or newer, so build
@@ -224,7 +224,7 @@ Rules:
 
 ## Using from Swift (macOS)
 
-Add the package `https://github.com/Nickel42/libchdman` and depend on the
+Add the package `https://github.com/Nickel42/lib-chd-kit` and depend on the
 `Chdman` product. It wraps the whole C API with Swift types, `throws`, and
 an async `run` that ties cancellation to Swift tasks:
 
@@ -247,16 +247,16 @@ to publish a release with `scripts/make-xcframework.sh`.
 
 Without the package, `include/module.modulemap` defines the `CChdman`
 module for using the C API directly: point `-I` at `include` and link
-`libchdman`.
+`chdkit`.
 
 ## Using from C# / .NET
 
-`bindings/csharp/LibChdman` is a .NET 8+ binding for the whole API, packed
-as the `LibChdman` NuGet package with the native libraries for win-x64,
+`bindings/csharp/LibChdKit` is a .NET 8+ binding for the whole API, packed
+as the `LibChdKit` NuGet package with the native libraries for win-x64,
 win-arm64 and osx inside:
 
 ```csharp
-using LibChdman;
+using LibChdKit;
 
 using var chdman = new Chdman();
 chdman.Progress = new Progress<ChdmanProgress>(p => progressBar.Value = p.Fraction * 100);
@@ -358,9 +358,9 @@ Run on macOS 27 (Apple silicon), universal Release build:
 
 ## Licensing
 
-libchdman's own code is BSD-3-Clause (`LICENSE`). Every bundled component
+lib-chd-kit's own code is BSD-3-Clause (`LICENSE`). Every bundled component
 is BSD-3-Clause, MIT, Zlib or public domain; no GPL code is compiled in. The
 per-file audit and full license texts are in `THIRD_PARTY_NOTICES.md`.
-Applications that ship libchdman must reproduce those notices. Local changes
+Applications that ship lib-chd-kit must reproduce those notices. Local changes
 to the vendored MAME sources (two small ones) are listed in
 `vendor/PATCHES.md`, which also describes how to move to a newer MAME release.

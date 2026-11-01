@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// libchdman C ABI: converts C option structs to the typed C++ options, runs
+// lib-chd-kit C ABI: converts C option structs to the typed C++ options, runs
 // the core operation and converts every exception into a status code plus a
 // message retrievable through chdman_last_error().
 
@@ -205,7 +205,7 @@ CHDMAN_API const char *CHDMAN_CALL chdman_status_string(chdman_status status)
 
 CHDMAN_API const char *CHDMAN_CALL chdman_version(void)
 {
-	return "0.289 (mame0289) libchdman 1";
+	return "0.289 (mame0289) lib-chd-kit 1";
 }
 
 CHDMAN_API int CHDMAN_CALL chdman_abi_version(void)

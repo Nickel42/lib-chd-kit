@@ -10,7 +10,7 @@ Files under `vendor/mame/` are unmodified except for the following.
 ## `src/lib/util/chd.h`, `src/lib/util/chd.cpp`
 
 1. Added `chd_file_compressor::compress_wait_idle()`, which blocks until the
-   read and compression work queues are empty. libchdman's compressors call
+   read and compression work queues are empty. lib-chd-kit's compressors call
    it from their destructors. If compression is abandoned part-way through
    (error or cancellation), this stops an I/O worker thread from calling
    `read_data()` on an object that is being destroyed. Upstream chdman
@@ -18,7 +18,7 @@ Files under `vendor/mame/` are unmodified except for the following.
 2. Removed the two `fprintf(stderr, ...)` calls in
    `chd_file_compressor::async_read()`'s exception handlers. The error is
    still recorded in `m_read_error` and returned by `compress_continue()`.
-   libchdman reports it through `chdman_last_error()`.
+   lib-chd-kit reports it through `chdman_last_error()`.
 3. Sized `chd_file_compressor::m_codecs` as `WORK_MAX_THREADS + 1` instead
    of `WORK_MAX_THREADS`. A thread that calls `osd_work_queue_wait()` on a
    `WORK_QUEUE_FLAG_MULTI` queue helps run queued items with

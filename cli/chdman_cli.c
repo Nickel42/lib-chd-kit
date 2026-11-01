@@ -1,6 +1,6 @@
 /*
  * chdman-cli: a chdman-compatible command line front end built only on the
- * libchdman C API (chdman.h). Option names, short names and output follow
+ * lib-chd-kit C API (chdman.h). Option names, short names and output follow
  * MAME 0.289 chdman.
  *
  * SPDX-License-Identifier: BSD-3-Clause

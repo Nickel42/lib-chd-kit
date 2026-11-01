@@ -2,7 +2,7 @@
 //
 // Apps should depend on the Swift package (see bindings/swift/README.md).
 // To try this file against a local build without the package:
-//   swiftc -I ../../include -L <build> -lchdman -lc++ -Xlinker -rpath -Xlinker <build> \
+//   swiftc -I ../../include -L <build> -lchdkit -lc++ -Xlinker -rpath -Xlinker <build> \
 //     ../../bindings/swift/Sources/Chdman/Chdman.swift main.swift -o chdman-swift
 // SPDX-License-Identifier: BSD-3-Clause
 
@@ -20,7 +20,7 @@ var bytes = [UInt8](repeating: 0, count: 1 << 20)
 for i in 0..<(bytes.count / 2) { bytes[i] = UInt8(truncatingIfNeeded: i * 7) }
 try Data(bytes).write(to: URL(fileURLWithPath: image))
 
-print("libchdman \(Chdman.version)")
+print("lib-chd-kit \(Chdman.version)")
 let chdman = try Chdman()
 chdman.onProgress = { progress in
     if progress.phase == .compressing { print(String(format: "  compressing %.0f%%", progress.fraction * 100)) }

@@ -1,5 +1,5 @@
 // Tests for the Swift binding.
-//   scripts/make-xcframework.sh && LIBCHDMAN_LOCAL_XCFRAMEWORK=1 swift test
+//   scripts/make-xcframework.sh && LIBCHDKIT_LOCAL_XCFRAMEWORK=1 swift test
 // SPDX-License-Identifier: BSD-3-Clause
 
 import Chdman
@@ -11,7 +11,7 @@ final class ChdmanTests: XCTestCase {
     var dir: URL!
 
     override func setUpWithError() throws {
-        dir = FileManager.default.temporaryDirectory.appendingPathComponent("libchdman-swift-tests-\(UUID().uuidString)")
+        dir = FileManager.default.temporaryDirectory.appendingPathComponent("lib-chd-kit-swift-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 

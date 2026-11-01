@@ -1,4 +1,4 @@
-# Hand-over notes: continuing libchdman on Windows
+# Hand-over notes: continuing lib-chd-kit on Windows
 
 These notes are for whoever picks up this project next, person or Claude
 session. Read them with `README.md`, which has the full build and usage
@@ -6,7 +6,7 @@ docs.
 
 ## What this project is
 
-libchdman packages MAME 0.289's CHD tooling (the logic of `chdman`) as a
+lib-chd-kit packages MAME 0.289's CHD tooling (the logic of `chdman`) as a
 cross-platform library with a stable C ABI (`include/chdman.h`). Targets:
 Windows 11 (MSVC x64 and ARM64) and macOS (universal arm64 + x86_64). Apps
 use it from C/C++, Swift (macOS) and C# via P/Invoke (Windows and macOS).
@@ -21,10 +21,10 @@ upstream on codecs and hunk sizes.
 
 Done and verified on macOS 27.0.1 (Apple silicon):
 
-- The universal `libchdman.dylib`, `libchdman.a` and `chdman-cli` build.
+- The universal `libchdkit.dylib`, `libchdkit.a` and `chdman-cli` build.
 - `ctest` passes 5/5:
   - `chdman_tests` and `chdman_tests_static`: 197 checks each.
-  - `parity_upstream`: unmodified upstream chdman and libchdman produce
+  - `parity_upstream`: unmodified upstream chdman and lib-chd-kit produce
     17 byte-identical outputs.
   - Two CLI smoke tests.
 - The dylib exports only the 60 `chdman_*` functions. The static archive is
@@ -44,7 +44,7 @@ Done and verified on macOS 27.0.1 (Apple silicon):
    available.
 3. Build with `-DCHDMAN_BUILD_UPSTREAM_REFERENCE=ON` so the parity test runs
    on Windows too.
-4. Run `examples/csharp` against `chdman.dll`.
+4. Run `examples/csharp` against `chdkit.dll`.
 5. (Optional) Run the macOS x86_64 slice on an Intel Mac or with Rosetta.
    It was compiled but never executed.
 
@@ -91,7 +91,7 @@ first:
   MAME's own MSVC switches from `scripts/genie.lua`: `/bigobj /utf-8
   /Zc:preprocessor` plus, for C++, `/EHsc /Zc:__cplusplus /Zc:enumTypes
   /Zc:templateScope /Zc:u8EscapeEncoding`. MAME 0.289 requires C++20.
-- **Warnings.** Vendored targets build with `/W0`; libchdman's own code with
+- **Warnings.** Vendored targets build with `/W0`; lib-chd-kit's own code with
   `/W3`.
 - **Defines** come from `chdman_mame` in `vendor/CMakeLists.txt`:
   `OSD_WINDOWS WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE
@@ -101,14 +101,14 @@ first:
   socket/pty openers (`win_open_socket`, `win_open_ptty`, ...).
 - **Link dependencies:** `shlwapi` for `PathIsRelativeW`. If other Win32
   libraries come up missing, MAME links `user32 advapi32 shell32` too.
-- **Output names:** the DLL is `chdman.dll` (import lib `chdman.lib`) and the
-  static library is `chdman_static.lib`. Consumers of the static library
+- **Output names:** the DLL is `chdkit.dll` (import lib `chdkit.lib`) and the
+  static library is `chdkit_static.lib`. Consumers of the static library
   must define `CHDMAN_STATIC`; the CMake target does this.
 - **CRT:** static by default (`/MT`), via `CMAKE_MSVC_RUNTIME_LIBRARY`.
 - **Exports:** the `CHDMAN_API` macro (`__declspec(dllexport)` when
   `CHDMAN_BUILDING_SHARED` is defined) controls them. Check with
-  `dumpbin /exports chdman.dll`, which should list 60 `chdman_*` functions.
-- **Test DLL copying:** the tests copy `chdman.dll` next to the test exe
+  `dumpbin /exports chdkit.dll`, which should list 60 `chdman_*` functions.
+- **Test DLL copying:** the tests copy `chdkit.dll` next to the test exe
   after each build. The CLI is built in the same directory as the DLL.
 
 ## Design decisions worth knowing

@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// libchdman tests. Uses only the public C API (plus a test-only AVI writer)
+// lib-chd-kit tests. Uses only the public C API (plus a test-only AVI writer)
 // and an independent SHA-1 implementation as the reference.
 
 #include "chdman.h"
@@ -878,7 +878,7 @@ int main()
 	std::error_code ec;
 	fs::remove_all(g_work, ec);
 	fs::create_directories(g_work);
-	std::printf("libchdman %s, work dir %s\n", chdman_version(), g_work.string().c_str());
+	std::printf("lib-chd-kit %s, work dir %s\n", chdman_version(), g_work.string().c_str());
 
 	struct { const char *name; void (*fn)(); } const tests[] = {
 		{ "templates", test_templates },

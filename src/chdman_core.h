@@ -1,11 +1,11 @@
 // license:BSD-3-Clause
-// libchdman core: chdman's do_* commands refactored into a library.
+// lib-chd-kit core: chdman's do_* commands refactored into a library.
 //
 // Internal C++ interface. Errors are reported by throwing chdman::error; the
 // C ABI layer (chdman_capi.cpp) catches everything at the boundary.
 
-#ifndef LIBCHDMAN_CORE_H
-#define LIBCHDMAN_CORE_H
+#ifndef LIBCHDKIT_CORE_H
+#define LIBCHDKIT_CORE_H
 
 #include "chdman.h"
 
@@ -296,4 +296,4 @@ chdman_status translate_current_exception(std::string &message) noexcept;
 
 } // namespace chdman
 
-#endif // LIBCHDMAN_CORE_H
+#endif // LIBCHDKIT_CORE_H

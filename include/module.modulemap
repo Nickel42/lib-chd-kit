@@ -1,6 +1,6 @@
 module CChdman {
     header "chdman.h"
-    link "chdman"
+    link "chdkit"
     link "c++"
     export *
 }

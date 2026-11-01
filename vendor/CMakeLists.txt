@@ -1,6 +1,6 @@
-# Vendored third-party and MAME utility code for libchdman.
+# Vendored third-party and MAME utility code for lib-chd-kit.
 # Everything here is built as position-independent object libraries with
-# hidden visibility, then folded into libchdman (static and shared).
+# hidden visibility, then folded into lib-chd-kit (static and shared).
 #
 # On MSVC the DLL and the static library can use different C runtimes
 # (CHDMAN_SHARED_MSVC_RUNTIME / CHDMAN_STATIC_MSVC_RUNTIME). Objects built for
@@ -74,7 +74,7 @@ function(chdman_add_vendor_set sfx runtime)
     ${MAME}/3rdparty/zstd/lib/decompress/*.c)
   add_library(chdman_zstd${sfx} OBJECT ${zstd_sources})
   target_include_directories(chdman_zstd${sfx} PUBLIC ${MAME}/3rdparty/zstd/lib)
-  # zstd forces default visibility on its API; keep it internal to libchdman
+  # zstd forces default visibility on its API; keep it internal to lib-chd-kit
   target_compile_definitions(chdman_zstd${sfx} PUBLIC ZSTD_DISABLE_ASM XXH_NAMESPACE=ZSTD_ ZSTDLIB_VISIBLE= ZSTDERRORLIB_VISIBLE= ZDICTLIB_VISIBLE= PRIVATE ZSTD_MULTITHREAD=0)
   chdman_vendor_target(chdman_zstd${sfx} "${runtime}")
 

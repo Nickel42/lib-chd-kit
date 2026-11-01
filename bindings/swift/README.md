@@ -12,12 +12,12 @@ C++.
 ## Install
 
 In Xcode: File > Add Package Dependencies, enter
-`https://github.com/Nickel42/libchdman`. Or in `Package.swift`:
+`https://github.com/Nickel42/lib-chd-kit`. Or in `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/Nickel42/libchdman", from: "1.0.0"),
+.package(url: "https://github.com/Nickel42/lib-chd-kit", from: "1.0.0"),
 // ...
-.target(name: "MyApp", dependencies: [.product(name: "Chdman", package: "libchdman")]),
+.target(name: "MyApp", dependencies: [.product(name: "Chdman", package: "lib-chd-kit")]),
 ```
 
 ## Use
@@ -72,7 +72,7 @@ against it instead of the release download:
 
 ```
 scripts/make-xcframework.sh
-LIBCHDMAN_LOCAL_XCFRAMEWORK=1 swift test
+LIBCHDKIT_LOCAL_XCFRAMEWORK=1 swift test
 ```
 
 To publish a release, run `scripts/make-xcframework.sh --release 1.0.0`. It

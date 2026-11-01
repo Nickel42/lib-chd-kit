@@ -5,11 +5,11 @@ if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 endif()
 
-project(libchdman VERSION 1.0.0 DESCRIPTION "MAME 0.289 CHD tools as a library" LANGUAGES C CXX)
+project(lib-chd-kit VERSION 1.0.0 DESCRIPTION "MAME 0.289 CHD tools as a library" LANGUAGES C CXX)
 set(CHDMAN_MAME_VERSION "0.289")
 
-option(CHDMAN_BUILD_SHARED "Build libchdman as a shared library (dylib/dll)" ON)
-option(CHDMAN_BUILD_STATIC "Build libchdman as a static library" ON)
+option(CHDMAN_BUILD_SHARED "Build lib-chd-kit as a shared library (dylib/dll)" ON)
+option(CHDMAN_BUILD_STATIC "Build lib-chd-kit as a static library" ON)
 option(CHDMAN_BUILD_CLI "Build the chdman-cli command line tool" ON)
 option(CHDMAN_BUILD_TESTS "Build the test suite" ON)
 option(CHDMAN_STATIC_PRELINK "Apple: prelink the static library so only chdman_* symbols are global" ON)
@@ -21,7 +21,7 @@ set(CMAKE_C_STANDARD 11)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
-# MSVC C runtime. The DLL defaults to the static CRT, so chdman.dll needs no
+# MSVC C runtime. The DLL defaults to the static CRT, so chdkit.dll needs no
 # VC++ redistributable. The static library defaults to the DLL CRT (/MD),
 # which is what Visual Studio projects use, so it links into a typical app
 # without LNK2038 runtime mismatches. Passing CMAKE_MSVC_RUNTIME_LIBRARY sets
@@ -33,8 +33,8 @@ else()
   set(_chdman_shared_rt "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   set(_chdman_static_rt "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
-set(CHDMAN_SHARED_MSVC_RUNTIME "${_chdman_shared_rt}" CACHE STRING "MSVC runtime for chdman.dll and chdman-cli")
-set(CHDMAN_STATIC_MSVC_RUNTIME "${_chdman_static_rt}" CACHE STRING "MSVC runtime for chdman_static.lib")
+set(CHDMAN_SHARED_MSVC_RUNTIME "${_chdman_shared_rt}" CACHE STRING "MSVC runtime for chdkit.dll and chdman-cli")
+set(CHDMAN_STATIC_MSVC_RUNTIME "${_chdman_static_rt}" CACHE STRING "MSVC runtime for chdkit_static.lib")
 if(CHDMAN_BUILD_SHARED)
   set(CHDMAN_PRIMARY_MSVC_RUNTIME "${CHDMAN_SHARED_MSVC_RUNTIME}")
 else()
@@ -95,7 +95,7 @@ if(CHDMAN_BUILD_SHARED)
   add_library(chdman_shared SHARED ${CHDMAN_SOURCES} ${CHDMAN_VENDOR_OBJECTS})
   chdman_configure_library(chdman_shared)
   target_compile_definitions(chdman_shared PRIVATE CHDMAN_BUILDING_SHARED)
-  set_target_properties(chdman_shared PROPERTIES OUTPUT_NAME chdman)
+  set_target_properties(chdman_shared PROPERTIES OUTPUT_NAME chdkit)
   if(APPLE)
     set_target_properties(chdman_shared PROPERTIES
       INSTALL_NAME_DIR "@rpath"
@@ -119,8 +119,8 @@ if(CHDMAN_BUILD_STATIC)
   chdman_configure_library(chdman_static)
   set_target_properties(chdman_static PROPERTIES MSVC_RUNTIME_LIBRARY "${CHDMAN_STATIC_MSVC_RUNTIME}")
   target_compile_definitions(chdman_static PRIVATE CHDMAN_BUILDING_STATIC PUBLIC CHDMAN_STATIC)
-  # avoid chdman.lib clashing with the DLL import library on Windows
-  set_target_properties(chdman_static PROPERTIES OUTPUT_NAME $<IF:$<BOOL:${WIN32}>,chdman_static,chdman>)
+  # avoid chdkit.lib clashing with the DLL import library on Windows
+  set_target_properties(chdman_static PROPERTIES OUTPUT_NAME $<IF:$<BOOL:${WIN32}>,chdkit_static,chdkit>)
   if(APPLE)
     # the static archive references libc++
     target_link_libraries(chdman_static INTERFACE c++)
@@ -146,7 +146,7 @@ $<JOIN:$<TARGET_OBJECTS:chdman_utf8proc>,\n>
       COMMAND ${CMAKE_COMMAND} "-DFILELIST=${_objlist}" "-DARCHIVE=$<TARGET_FILE:chdman_static>"
         "-DARCHS=${_archs}" "-DMINOS=${CMAKE_OSX_DEPLOYMENT_TARGET}" "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/prelink_$<CONFIG>"
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/prelink_static.cmake
-      COMMENT "Prelinking libchdman.a (hiding non-API symbols)"
+      COMMENT "Prelinking libchdkit.a (hiding non-API symbols)"
       VERBATIM)
   endif()
   add_library(chdman::chdman_static ALIAS chdman_static)
@@ -184,11 +184,11 @@ install(TARGETS ${CHDMAN_INSTALL_TARGETS}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(FILES include/chdman.h include/module.modulemap DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES THIRD_PARTY_NOTICES.md LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/libchdman)
+install(FILES THIRD_PARTY_NOTICES.md LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/lib-chd-kit)
 install(EXPORT chdmanTargets NAMESPACE chdman:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/chdman FILE chdmanConfig.cmake)
 
 # Optional: build upstream MAME src/tools/chdman.cpp unchanged from the
-# vendored sources. Used only to check that libchdman produces byte-identical
+# vendored sources. Used only to check that lib-chd-kit produces byte-identical
 # CHDs to the reference tool (see tests/parity.cmake).
 option(CHDMAN_BUILD_UPSTREAM_REFERENCE "Build unmodified upstream chdman for parity tests" OFF)
 if(CHDMAN_BUILD_UPSTREAM_REFERENCE)

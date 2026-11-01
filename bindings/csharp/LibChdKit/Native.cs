@@ -1,11 +1,11 @@
-// Raw P/Invoke layer for libchdman (chdman.h). Struct layouts mirror the C
+// Raw P/Invoke layer for lib-chd-kit (chdman.h). Struct layouts mirror the C
 // header exactly; the public, idiomatic API lives in Chdman.cs.
 // SPDX-License-Identifier: BSD-3-Clause
 
 using System;
 using System.Runtime.InteropServices;
 
-namespace LibChdman.Interop
+namespace LibChdKit.Interop
 {
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     internal delegate int ProgressCallback(IntPtr user, ChdmanPhase phase, double fraction, double ratio);
@@ -217,8 +217,8 @@ namespace LibChdman.Interop
 
     internal static class Native
     {
-        // resolves to chdman.dll on Windows and libchdman.dylib on macOS
-        const string Lib = "chdman";
+        // resolves to chdkit.dll on Windows and libchdkit.dylib on macOS
+        const string Lib = "chdkit";
         public const ulong Unset = ulong.MaxValue;
 
         [DllImport(Lib)] public static extern IntPtr chdman_version();
