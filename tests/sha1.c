@@ -1,6 +1,6 @@
 /*
  * Minimal SHA-1 (FIPS 180-4) used by the tests as an independent reference
- * for the SHA-1 values libchdman writes into CHD headers.
+ * for the SHA-1 values lib-chd-kit writes into CHD headers.
  * SPDX-License-Identifier: BSD-3-Clause
  */
 #include "sha1.h"

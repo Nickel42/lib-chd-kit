@@ -1,10 +1,10 @@
-// Swift API for libchdman: MAME's CHD tools (chdman) as a library.
+// Swift API for lib-chd-kit: MAME's CHD tools (chdman) as a library.
 // SPDX-License-Identifier: BSD-3-Clause
 
 @_exported import CChdman
 import Foundation
 
-/// A libchdman call failed.
+/// A lib-chd-kit call failed.
 public struct ChdmanError: Error, CustomStringConvertible, Sendable {
     public enum Status: Int, Sendable {
         case invalidArgument = 1, fileExists, fileOpen, io, chd, unsupported, notFound, cancelled, outOfMemory, `internal`, abiMismatch
@@ -148,7 +148,7 @@ public struct ChdProgress: Sendable {
 
 public enum ChdLogLevel: Int, Sendable { case info = 0, warning, error }
 
-/// One libchdman context.
+/// One lib-chd-kit context.
 ///
 /// Operations block. From Swift concurrency, wrap them in `run`, which
 /// moves them off the calling actor and cancels them when the task is
@@ -555,7 +555,7 @@ private func fixedString<T>(_ tuple: T) -> String {
 }
 
 private extension NSLock {
-    // NSLocking.withLock needs macOS 14; libchdman supports macOS 11
+    // NSLocking.withLock needs macOS 14; lib-chd-kit supports macOS 11
     func locked<R>(_ body: () throws -> R) rethrows -> R {
         lock()
         defer { unlock() }

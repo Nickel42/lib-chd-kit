@@ -3177,7 +3177,7 @@ std::error_condition chd_file_compressor::compress_continue(double &progress, do
 	return m_walking_parent ? error::WALKING_PARENT : error::COMPRESSING;
 }
 
-// libchdman: wait for all outstanding asynchronous work so that the object
+// lib-chd-kit: wait for all outstanding asynchronous work so that the object
 // (and any derived-class state used by read_data) can be destroyed safely
 // after compression is abandoned part-way through.
 void chd_file_compressor::compress_wait_idle()
@@ -3370,7 +3370,7 @@ void chd_file_compressor::async_read()
 	}
 	catch (std::error_condition const &err)
 	{
-		// libchdman: no stderr output from library code
+		// lib-chd-kit: no stderr output from library code
 		m_read_error = err;
 	}
 	catch (std::exception const &ex)

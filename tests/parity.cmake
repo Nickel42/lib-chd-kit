@@ -1,5 +1,5 @@
 # Parity test: run the same commands through unmodified upstream chdman and
-# through chdman-cli (libchdman) and require byte-identical outputs.
+# through chdman-cli (lib-chd-kit) and require byte-identical outputs.
 # Inputs are the fixtures written by chdman_tests into tests/work_shared.
 #
 #   cmake -DUPSTREAM=<chdman-upstream> -DCLI=<chdman-cli> -DWORK=<dir> -P parity.cmake
@@ -33,7 +33,7 @@ function(same tag relpath)
   if(a STREQUAL b)
     message(STATUS "[${tag}] ${relpath} identical")
   else()
-    message(SEND_ERROR "[${tag}] ${relpath} differs between upstream chdman and libchdman")
+    message(SEND_ERROR "[${tag}] ${relpath} differs between upstream chdman and lib-chd-kit")
   endif()
 endfunction()
 

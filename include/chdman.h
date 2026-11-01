@@ -1,5 +1,5 @@
 /*
- * chdman.h - C ABI for libchdman (MAME 0.289 CHD tooling as a library)
+ * chdman.h - C ABI for lib-chd-kit (MAME 0.289 CHD tooling as a library)
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *
@@ -78,7 +78,7 @@ typedef enum chdman_status {
 /* Static English description of a status code. Never NULL. */
 CHDMAN_API const char *CHDMAN_CALL chdman_status_string(chdman_status status);
 
-/* Library version, e.g. "0.289 (mame0289) libchdman 1". */
+/* Library version, e.g. "0.289 (mame0289) lib-chd-kit 1". */
 CHDMAN_API const char *CHDMAN_CALL chdman_version(void);
 CHDMAN_API int CHDMAN_CALL chdman_abi_version(void);
 

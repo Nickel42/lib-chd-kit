@@ -1,9 +1,9 @@
-# Rebuilds libchdman.a on Apple platforms as a single prelinked object per
+# Rebuilds libchdkit.a on Apple platforms as a single prelinked object per
 # architecture in which every symbol except the chdman_* C API is private.
 # This stops the bundled zlib/zstd/FLAC/LZMA/MAME symbols from clashing with
 # copies an application links itself.
 #
-#   cmake -DFILELIST=<objects.txt> -DARCHIVE=<libchdman.a> -DARCHS="arm64;x86_64" -DMINOS=11.0 -DWORK=<dir> -P prelink_static.cmake
+#   cmake -DFILELIST=<objects.txt> -DARCHIVE=<libchdkit.a> -DARCHS="arm64;x86_64" -DMINOS=11.0 -DWORK=<dir> -P prelink_static.cmake
 
 # stamp the platform so linkers don't warn about a missing LC_BUILD_VERSION
 set(platform_args)

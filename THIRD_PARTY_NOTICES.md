@@ -1,6 +1,6 @@
 # Third-party notices
 
-libchdman bundles the source code listed below. Everything shipped in the
+lib-chd-kit bundles the source code listed below. Everything shipped in the
 library binaries is under BSD-3-Clause, MIT, Zlib or public-domain terms;
 no GPL/LGPL code is compiled in. Each section gives the component, where it
 came from, the license that applies, and the full license text.
@@ -26,7 +26,7 @@ Notes on the license audit:
 - Every MAME source file copied here was checked. 81 files carry
   `license:BSD-3-Clause` and 2 (`md5.cpp`, `md5.h`) carry
   `license:Public domain`. `vendor/mame/COPYING` is MAME's own statement that
-  "MAME as a whole" is GPL while individual files may be under other terms; libchdman uses
+  "MAME as a whole" is GPL while individual files may be under other terms; lib-chd-kit uses
   only the individually BSD-licensed files, so the GPL terms that apply to MAME as a whole don't apply here.
 - Only libFLAC (the library) is included. FLAC's command-line tools and
   plugins, which are GPL, are not vendored. Neither are the COPYING.GPL,
@@ -37,7 +37,7 @@ Notes on the license audit:
 - Zstandard's GPLv2 option is not exercised; its `COPYING` (GPLv2 text)
   file was not vendored.
 - MAME's `src/osd/modules/lib/osdlib_*.cpp` and the socket/pty file modules
-  are replaced by `vendor/osd_shim.cpp` (BSD-3-Clause, libchdman).
+  are replaced by `vendor/osd_shim.cpp` (BSD-3-Clause, lib-chd-kit).
 
 ---
 

@@ -1,7 +1,7 @@
 // license:BSD-3-Clause
-// copyright-holders:Aaron Giles, libchdman contributors
+// copyright-holders:Aaron Giles, lib-chd-kit contributors
 //
-// libchdman core: the logic of MAME 0.289 src/tools/chdman.cpp, refactored so
+// lib-chd-kit core: the logic of MAME 0.289 src/tools/chdman.cpp, refactored so
 // that it
 //   - takes typed option structs instead of a string map,
 //   - reports progress through a callback with cancellation,

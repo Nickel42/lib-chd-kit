@@ -449,7 +449,7 @@ public:
 	// compression management
 	void compress_begin();
 	std::error_condition compress_continue(double &progress, double &ratio);
-	void compress_wait_idle(); // libchdman: block until queued reads/compression work have finished
+	void compress_wait_idle(); // lib-chd-kit: block until queued reads/compression work have finished
 
 protected:
 	// required override: read more data
@@ -571,7 +571,7 @@ private:
 	std::vector<uint8_t>    m_work_buffer;      // buffer containing hunk data to work on
 	std::vector<uint8_t>    m_compressed_buffer;// buffer containing compressed data
 	work_item               m_work_item[WORK_BUFFER_HUNKS]; // status of each hunk
-	chd_compressor_group *  m_codecs[WORK_MAX_THREADS + 1]; // codecs to use; libchdman: +1 for the thread calling osd_work_queue_wait(), which runs items as threadid == WORK_MAX_THREADS
+	chd_compressor_group *  m_codecs[WORK_MAX_THREADS + 1]; // codecs to use; lib-chd-kit: +1 for the thread calling osd_work_queue_wait(), which runs items as threadid == WORK_MAX_THREADS
 
 	// output state
 	uint32_t                m_write_hunk;       // next hunk to write

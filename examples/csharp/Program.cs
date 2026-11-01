@@ -7,7 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using LibChdman;
+using LibChdKit;
 
 var dir = Path.Combine(Path.GetTempPath(), "chdman-csharp-example");
 Directory.CreateDirectory(dir);
@@ -17,7 +17,7 @@ var bytes = new byte[1 << 20];
 for (int i = 0; i < bytes.Length / 2; i++) bytes[i] = (byte)(i * 7);
 File.WriteAllBytes(image, bytes);
 
-Console.WriteLine($"libchdman {Chdman.Version}, ABI {Chdman.AbiVersion}");
+Console.WriteLine($"lib-chd-kit {Chdman.Version}, ABI {Chdman.AbiVersion}");
 
 using var chdman = new Chdman();
 chdman.Progress = new Progress<ChdmanProgress>(p => Console.WriteLine($"  {p.Phase} {p.Fraction:P0}"));

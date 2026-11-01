@@ -1,4 +1,4 @@
-# LibChdman for .NET
+# LibChdKit for .NET
 
 MAME 0.289's CHD tools (the code behind `chdman`) as a .NET library. It
 creates, verifies, copies and extracts CHD images for CD (cue/bin, gdi, toc,
@@ -6,19 +6,19 @@ nrg, iso), DVD, hard disk, raw and laserdisc media. The CHD bytes it writes
 are identical to upstream chdman's.
 
 Runs on Windows x64, Windows ARM64 and macOS (Apple silicon and Intel) with
-.NET 8 or newer. The package carries the native `chdman.dll` /
-`libchdman.dylib`, so nothing else needs installing.
+.NET 8 or newer. The package carries the native `chdkit.dll` /
+`libchdkit.dylib`, so nothing else needs installing.
 
 ## Install
 
 ```
-dotnet add package LibChdman
+dotnet add package LibChdKit
 ```
 
 ## Use
 
 ```csharp
-using LibChdman;
+using LibChdKit;
 
 using var chdman = new Chdman();
 chdman.Progress = new Progress<ChdmanProgress>(p => progressBar.Value = p.Fraction * 100);
@@ -66,15 +66,15 @@ Rules:
 ## Building the package
 
 The package needs the native library for each platform it supports. Build
-libchdman (see the top-level README) and put the results here:
+lib-chd-kit (see the top-level README) and put the results here:
 
 ```
-artifacts/native/win-x64/chdman.dll        (Windows x64 Release build)
-artifacts/native/win-arm64/chdman.dll      (Windows ARM64 Release build)
-artifacts/native/osx/libchdman.dylib       (macOS universal build)
+artifacts/native/win-x64/chdkit.dll        (Windows x64 Release build)
+artifacts/native/win-arm64/chdkit.dll      (Windows ARM64 Release build)
+artifacts/native/osx/libchdkit.dylib       (macOS universal build)
 ```
 
-then, from `bindings/csharp/LibChdman`:
+then, from `bindings/csharp/LibChdKit`:
 
 ```
 dotnet pack -c Release -o ../../../artifacts/nuget
@@ -86,7 +86,7 @@ Windows-only package can be built on Windows alone. Pass
 
 ## Tests
 
-`LibChdman.Tests` is a self-checking console program (no test framework).
+`LibChdKit.Tests` is a self-checking console program (no test framework).
 Point it at a native build and run it:
 
 ```

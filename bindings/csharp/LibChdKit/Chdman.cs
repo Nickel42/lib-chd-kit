@@ -1,4 +1,4 @@
-// Managed API for libchdman: MAME's CHD tools (chdman) as a .NET library.
+// Managed API for lib-chd-kit: MAME's CHD tools (chdman) as a .NET library.
 // SPDX-License-Identifier: BSD-3-Clause
 
 using System;
@@ -7,9 +7,9 @@ using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-using LibChdman.Interop;
+using LibChdKit.Interop;
 
-namespace LibChdman
+namespace LibChdKit
 {
     public enum ChdmanStatus : int
     {
@@ -24,7 +24,7 @@ namespace LibChdman
 
     public enum ChdVerifyOutcome : int { Ok = 0, RawMismatch = 1, OverallMismatch = 2, Fixed = 3, NotApplicable = 4 }
 
-    /// <summary>A libchdman call failed. <see cref="Status"/> is the C status code.</summary>
+    /// <summary>A lib-chd-kit call failed. <see cref="Status"/> is the C status code.</summary>
     public sealed class ChdmanException : Exception
     {
         public ChdmanStatus Status { get; }
@@ -107,7 +107,7 @@ namespace LibChdman
     public sealed record ChdHardDiskTemplate(int Id, string Manufacturer, string Model, uint Cylinders, uint Heads, uint Sectors, uint SectorSize);
 
     /// <summary>
-    /// One libchdman context. Operations block; run them on a worker thread
+    /// One lib-chd-kit context. Operations block; run them on a worker thread
     /// (for example with Task.Run) to keep a UI responsive. An instance runs
     /// one operation at a time; use separate instances for parallel work.
     /// Every operation accepts a CancellationToken; a cancelled operation

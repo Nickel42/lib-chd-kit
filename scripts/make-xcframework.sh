@@ -1,9 +1,9 @@
 #!/bin/sh
 # Builds build-xcframework/CChdman.xcframework (universal arm64 + x86_64
-# static libchdman with the CChdman module) for the Swift package.
+# static libchdkit with the CChdman module) for the Swift package.
 #
 #   scripts/make-xcframework.sh                    local build; then
-#                                                  LIBCHDMAN_LOCAL_XCFRAMEWORK=1 swift test
+#                                                  LIBCHDKIT_LOCAL_XCFRAMEWORK=1 swift test
 #   scripts/make-xcframework.sh --release 1.0.0    also zips it and writes the
 #                                                  version and checksum into Package.swift
 #
@@ -38,7 +38,7 @@ module CChdman {
 EOF
 
 rm -rf "$out/CChdman.xcframework"
-xcodebuild -create-xcframework -library "$work/libchdman.a" -headers "$headers" -output "$out/CChdman.xcframework"
+xcodebuild -create-xcframework -library "$work/libchdkit.a" -headers "$headers" -output "$out/CChdman.xcframework"
 echo "built $out/CChdman.xcframework"
 
 if [ -n "$release" ]; then

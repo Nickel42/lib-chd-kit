@@ -1,13 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    .NET binding for libchdman, packed as a NuGet package with the native
+    .NET binding for lib-chd-kit, packed as a NuGet package with the native
     libraries under runtimes/<rid>/native/.
 
     The native binaries come from ChdmanNativeRoot, laid out as
-      $(ChdmanNativeRoot)/win-x64/chdman.dll
-      $(ChdmanNativeRoot)/win-arm64/chdman.dll
-      $(ChdmanNativeRoot)/osx/libchdman.dylib      (universal arm64 + x86_64)
+      $(ChdmanNativeRoot)/win-x64/chdkit.dll
+      $(ChdmanNativeRoot)/win-arm64/chdkit.dll
+      $(ChdmanNativeRoot)/osx/libchdkit.dylib      (universal arm64 + x86_64)
     Any that are missing are left out of the package (with a warning), so a
     Windows-only package can be built on Windows alone. See
     bindings/csharp/README.md.
@@ -18,32 +18,32 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <RootNamespace>LibChdman</RootNamespace>
-    <AssemblyName>LibChdman</AssemblyName>
+    <RootNamespace>LibChdKit</RootNamespace>
+    <AssemblyName>LibChdKit</AssemblyName>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
 
-    <PackageId>LibChdman</PackageId>
+    <PackageId>LibChdKit</PackageId>
     <Version>1.0.0</Version>
-    <Authors>libchdman contributors</Authors>
+    <Authors>lib-chd-kit contributors</Authors>
     <Description>MAME 0.289's CHD (Compressed Hunks of Data) tools as a .NET library: create, verify, copy and extract CHD images for CD (cue/bin, gdi, toc), DVD, hard disk, raw and laserdisc media. Output is byte-identical to chdman.</Description>
     <PackageTags>chd;chdman;mame;cd;iso;emulation;compression</PackageTags>
     <PackageLicenseExpression>BSD-3-Clause</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/Nickel42/libchdman</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/Nickel42/libchdman</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Nickel42/lib-chd-kit</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Nickel42/lib-chd-kit</RepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <ChdmanNativeRoot Condition="'$(ChdmanNativeRoot)' == ''">$(MSBuildThisFileDirectory)../../../artifacts/native</ChdmanNativeRoot>
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="LibChdman.Tests" />
+    <InternalsVisibleTo Include="LibChdKit.Tests" />
   </ItemGroup>
 
   <PropertyGroup>
-    <ChdmanNativeWinX64>$(ChdmanNativeRoot)/win-x64/chdman.dll</ChdmanNativeWinX64>
-    <ChdmanNativeWinArm64>$(ChdmanNativeRoot)/win-arm64/chdman.dll</ChdmanNativeWinArm64>
-    <ChdmanNativeOsx>$(ChdmanNativeRoot)/osx/libchdman.dylib</ChdmanNativeOsx>
+    <ChdmanNativeWinX64>$(ChdmanNativeRoot)/win-x64/chdkit.dll</ChdmanNativeWinX64>
+    <ChdmanNativeWinArm64>$(ChdmanNativeRoot)/win-arm64/chdkit.dll</ChdmanNativeWinArm64>
+    <ChdmanNativeOsx>$(ChdmanNativeRoot)/osx/libchdkit.dylib</ChdmanNativeOsx>
   </PropertyGroup>
 
   <ItemGroup>
@@ -56,9 +56,9 @@
   </ItemGroup>
 
   <Target Name="ChdmanWarnMissingNative" BeforeTargets="GenerateNuspec">
-    <Warning Condition="!Exists('$(ChdmanNativeWinX64)')" Text="libchdman: no win-x64 chdman.dll at $(ChdmanNativeWinX64); the package won't run on x64 Windows." />
-    <Warning Condition="!Exists('$(ChdmanNativeWinArm64)')" Text="libchdman: no win-arm64 chdman.dll at $(ChdmanNativeWinArm64); the package won't run on ARM64 Windows." />
-    <Warning Condition="!Exists('$(ChdmanNativeOsx)')" Text="libchdman: no libchdman.dylib at $(ChdmanNativeOsx); the package won't run on macOS." />
+    <Warning Condition="!Exists('$(ChdmanNativeWinX64)')" Text="lib-chd-kit: no win-x64 chdkit.dll at $(ChdmanNativeWinX64); the package won't run on x64 Windows." />
+    <Warning Condition="!Exists('$(ChdmanNativeWinArm64)')" Text="lib-chd-kit: no win-arm64 chdkit.dll at $(ChdmanNativeWinArm64); the package won't run on ARM64 Windows." />
+    <Warning Condition="!Exists('$(ChdmanNativeOsx)')" Text="lib-chd-kit: no libchdkit.dylib at $(ChdmanNativeOsx); the package won't run on macOS." />
   </Target>
 
 </Project>

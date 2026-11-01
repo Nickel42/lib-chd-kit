@@ -1,6 +1,6 @@
 BSD 3-Clause License
 
-Copyright (c) 2026, libchdman contributors
+Copyright (c) 2026, lib-chd-kit contributors
 Portions copyright (c) Aaron Giles and the MAME project contributors
 
 Redistribution and use in source and binary forms, with or without
@@ -30,5 +30,5 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-Third-party components bundled with libchdman are listed, with their
+Third-party components bundled with lib-chd-kit are listed, with their
 licenses, in THIRD_PARTY_NOTICES.md.

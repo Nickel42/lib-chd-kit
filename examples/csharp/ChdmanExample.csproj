@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Example app using the LibChdman binding (bindings/csharp/LibChdman).
-      dotnet run -p:ChdmanLibDir=<dir containing chdman.dll or libchdman.dylib>
+    Example app using the LibChdKit binding (bindings/csharp/LibChdKit).
+      dotnet run -p:ChdmanLibDir=<dir containing chdkit.dll or libchdkit.dylib>
     An app using the NuGet package instead needs only
-      <PackageReference Include="LibChdman" Version="1.0.0" />
+      <PackageReference Include="LibChdKit" Version="1.0.0" />
   -->
 
   <PropertyGroup>
@@ -16,7 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../bindings/csharp/LibChdman/LibChdman.csproj" />
+    <ProjectReference Include="../../bindings/csharp/LibChdKit/LibChdKit.csproj" />
   </ItemGroup>
 
   <Import Project="../../bindings/csharp/ChdmanNativeCopy.targets" />

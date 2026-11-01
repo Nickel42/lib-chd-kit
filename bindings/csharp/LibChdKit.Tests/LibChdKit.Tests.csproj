@@ -3,7 +3,7 @@
   <!--
     Self-checking console test for the .NET binding (no test framework, so it
     restores without downloading packages). Exit code 0 = all checks passed.
-      dotnet run -p:ChdmanLibDir=<dir containing chdman.dll or libchdman.dylib>
+      dotnet run -p:ChdmanLibDir=<dir containing chdkit.dll or libchdkit.dylib>
   -->
 
   <PropertyGroup>
@@ -17,7 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../LibChdman/LibChdman.csproj" />
+    <ProjectReference Include="../LibChdKit/LibChdKit.csproj" />
   </ItemGroup>
 
   <Import Project="../ChdmanNativeCopy.targets" />
