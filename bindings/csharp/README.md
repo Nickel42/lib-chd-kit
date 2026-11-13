@@ -44,6 +44,25 @@ Everything chdman does is there: `Info`, `Verify`, `CreateRaw`,
 overwrite and input ranges are set with `ChdOutputSettings` and `ChdRange`;
 defaults match chdman.
 
+`ExtractCdToSink` and `ExtractRawToSink` stream instead of writing files:
+they hand each file `ExtractCd` / `ExtractRaw` would write (for a CD, the
+TOC first, then the bins in track order) to a `ChdExtractSink` as
+`BeginFile(name)`, `Write(ReadOnlySpan<byte>)` blocks and `EndFile()`. The
+bytes are identical to the files', and nothing touches the disk, which
+suits hashing tracks or converting sectors on the fly:
+
+```csharp
+sealed class HashingSink : ChdExtractSink
+{
+    IncrementalHash? _sha1;
+    public override void BeginFile(string name) => _sha1 = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+    public override void Write(ReadOnlySpan<byte> data) => _sha1!.AppendData(data);
+    public override void EndFile() => Console.WriteLine(Convert.ToHexString(_sha1!.GetHashAndReset()));
+}
+
+chdman.ExtractCdToSink(@"C:\games\game.chd", "game.cue", new HashingSink(), outputBin: "game (Track %t).bin", splitBin: true);
+```
+
 Rules:
 
 - A `Chdman` instance runs one operation at a time (a second concurrent call

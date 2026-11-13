@@ -107,6 +107,24 @@ namespace LibChdKit
     public sealed record ChdHardDiskTemplate(int Id, string Manufacturer, string Model, uint Cylinders, uint Heads, uint Sectors, uint SectorSize);
 
     /// <summary>
+    /// Receives the files a streaming extraction (<see cref="Chdman.ExtractCdToSink"/>,
+    /// <see cref="Chdman.ExtractRawToSink"/>) produces instead of writing them to disk.
+    /// Each file is one <see cref="BeginFile"/>, its bytes in order through
+    /// <see cref="Write"/>, then <see cref="EndFile"/>. Called on the operation's
+    /// thread; an exception thrown here cancels the operation and is rethrown.
+    /// </summary>
+    public abstract class ChdExtractSink
+    {
+        /// <param name="name">The path the file would have been written to.</param>
+        public abstract void BeginFile(string name);
+
+        /// <summary>The next block of the current file, valid only during the call. CD data blocks hold whole frames.</summary>
+        public abstract void Write(ReadOnlySpan<byte> data);
+
+        public abstract void EndFile();
+    }
+
+    /// <summary>
     /// One lib-chd-kit context. Operations block; run them on a worker thread
     /// (for example with Task.Run) to keep a UI responsive. An instance runs
     /// one operation at a time; use separate instances for parallel work.
@@ -118,6 +136,8 @@ namespace LibChdKit
         readonly ContextHandle _ctx;
         readonly ProgressCallback _progressCallback; // referenced here so the GC keeps them alive
         readonly LogCallback _logCallback;
+        readonly SinkCallback _sinkCallback;
+        ChdExtractSink? _sink;
         int _busy;
         CancellationToken _token;
         ExceptionDispatchInfo? _callbackError;
@@ -134,6 +154,7 @@ namespace LibChdKit
             Check(Native.chdman_context_create(out _ctx), null);
             _progressCallback = OnNativeProgress;
             _logCallback = OnNativeLog;
+            _sinkCallback = OnNativeSink;
             Native.chdman_context_set_progress(_ctx, _progressCallback, IntPtr.Zero);
             Native.chdman_context_set_log(_ctx, _logCallback, IntPtr.Zero);
             Native.chdman_context_set_num_processors(_ctx, threads);
@@ -359,6 +380,43 @@ namespace LibChdKit
             Run(cancellationToken, () => Native.chdman_extract_cd(_ctx, ref o));
         }
 
+        /// <summary>
+        /// Like <see cref="ExtractRaw"/>, but passes the data to <paramref name="sink"/> as one file
+        /// named <paramref name="outputName"/> instead of writing it. Nothing is written to disk.
+        /// </summary>
+        public void ExtractRawToSink(string input, string outputName, ChdExtractSink sink, ChdRange? range = null, string? inputParent = null, CancellationToken cancellationToken = default)
+        {
+            if (sink is null)
+                throw new ArgumentNullException(nameof(sink));
+            var o = new ExtractRawOptions();
+            Native.chdman_extract_raw_options_init(ref o);
+            o.Input = input;
+            o.InputParent = inputParent;
+            o.Output = outputName;
+            o.Range = ToNative(range);
+            RunWithSink(sink, cancellationToken, () => Native.chdman_extract_raw_to_sink(_ctx, ref o, _sinkCallback, IntPtr.Zero));
+        }
+
+        /// <summary>
+        /// Like <see cref="ExtractCd"/>, but passes the files to <paramref name="sink"/> instead of writing them:
+        /// first the TOC (<paramref name="output"/>, with the platform's line endings), then the data files in
+        /// track order, byte-identical to what <see cref="ExtractCd"/> writes. <paramref name="output"/> and
+        /// <paramref name="outputBin"/> pick the format and name the files; nothing is written to disk.
+        /// </summary>
+        public void ExtractCdToSink(string input, string output, ChdExtractSink sink, string? outputBin = null, bool splitBin = false, string? inputParent = null, CancellationToken cancellationToken = default)
+        {
+            if (sink is null)
+                throw new ArgumentNullException(nameof(sink));
+            var o = new ExtractCdOptions();
+            Native.chdman_extract_cd_options_init(ref o);
+            o.Input = input;
+            o.InputParent = inputParent;
+            o.Output = output;
+            o.OutputBin = outputBin;
+            o.SplitBin = splitBin ? 1 : 0;
+            RunWithSink(sink, cancellationToken, () => Native.chdman_extract_cd_to_sink(_ctx, ref o, _sinkCallback, IntPtr.Zero));
+        }
+
         /// <summary>Extracts a laserdisc CHD to an AVI.</summary>
         public void ExtractLaserdisc(string input, string output, bool force = false, ulong? startFrame = null, ulong? lengthFrames = null, string? inputParent = null, CancellationToken cancellationToken = default)
         {
@@ -498,6 +556,44 @@ namespace LibChdKit
             try
             {
                 Progress?.Report(new ChdmanProgress(phase, fraction, ratio));
+                return _token.IsCancellationRequested ? 1 : 0;
+            }
+            catch (Exception ex)
+            {
+                _callbackError = ExceptionDispatchInfo.Capture(ex);
+                return 1;
+            }
+        }
+
+        void RunWithSink(ChdExtractSink sink, CancellationToken token, NativeCall call)
+        {
+            // Run guards against concurrent use, so _sink is only set inside it
+            Run(token, () =>
+            {
+                _sink = sink;
+                try { return call(); }
+                finally { _sink = null; }
+            });
+        }
+
+        unsafe int OnNativeSink(IntPtr user, SinkEvent ev, IntPtr name, IntPtr data, nuint length)
+        {
+            if (_callbackError != null || _sink is null)
+                return 1;
+            try
+            {
+                switch (ev)
+                {
+                    case SinkEvent.BeginFile:
+                        _sink.BeginFile(Native.Str(name));
+                        break;
+                    case SinkEvent.Data:
+                        _sink.Write(new ReadOnlySpan<byte>((void*)data, checked((int)length)));
+                        break;
+                    case SinkEvent.EndFile:
+                        _sink.EndFile();
+                        break;
+                }
                 return _token.IsCancellationRequested ? 1 : 0;
             }
             catch (Exception ex)

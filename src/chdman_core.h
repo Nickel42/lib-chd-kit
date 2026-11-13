@@ -271,6 +271,22 @@ struct hd_template
 };
 
 
+// ======================> extract_sink
+//
+// Receives the files an extraction would write, in order, instead of having
+// them written to disk. Each file is begin_file(), any number of write()s
+// (sequential, no seeking) and end_file(). Any member may throw to abort.
+
+class extract_sink
+{
+public:
+	virtual ~extract_sink() = default;
+	virtual void begin_file(std::string const &name) = 0;
+	virtual void write(const void *data, size_t length) = 0;
+	virtual void end_file() = 0;
+};
+
+
 // ======================> operations
 
 info_result info(session &s, info_options const &opts);
@@ -281,8 +297,11 @@ void create_cd(session &s, create_cd_options const &opts);
 void create_dvd(session &s, create_dvd_options const &opts);
 void create_ld(session &s, create_ld_options const &opts);
 void copy(session &s, copy_options const &opts);
-void extract_raw(session &s, extract_raw_options const &opts);
-void extract_cd(session &s, extract_cd_options const &opts);
+// With a sink, nothing is written to disk and force is ignored: the output
+// names only choose the format and name the files the sink receives.
+// extract_cd gives the sink the TOC file first, then the data files.
+void extract_raw(session &s, extract_raw_options const &opts, extract_sink *sink = nullptr);
+void extract_cd(session &s, extract_cd_options const &opts, extract_sink *sink = nullptr);
 void extract_ld(session &s, extract_ld_options const &opts);
 void add_metadata(session &s, add_metadata_options const &opts);
 void del_metadata(session &s, metadata_ref const &ref);

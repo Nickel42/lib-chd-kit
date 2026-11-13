@@ -536,6 +536,128 @@ void test_cd_roundtrip()
 	CHECK_EQ_STR(media3, "cd");
 }
 
+// Collects the files an extraction passes to a sink, checking the event order.
+struct sink_files
+{
+	std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
+	bool open = false;
+	bool order_ok = true;
+	int cancel_after_data = -1; // cancel on this DATA event (0-based), -1 = never
+	int data_events = 0;
+
+	static int CHDMAN_CALL callback(void *user, chdman_sink_event event, const char *name, const uint8_t *data, size_t length)
+	{
+		auto &self = *static_cast<sink_files *>(user);
+		switch (event)
+		{
+		case CHDMAN_SINK_BEGIN_FILE:
+			if (self.open || data || length)
+				self.order_ok = false;
+			self.files.emplace_back(name, std::vector<uint8_t>());
+			self.open = true;
+			break;
+		case CHDMAN_SINK_DATA:
+			if (!self.open || self.files.back().first != name)
+				self.order_ok = false;
+			else
+				self.files.back().second.insert(self.files.back().second.end(), data, data + length);
+			if (self.data_events++ == self.cancel_after_data)
+				return 1;
+			break;
+		case CHDMAN_SINK_END_FILE:
+			if (!self.open || self.files.back().first != name)
+				self.order_ok = false;
+			self.open = false;
+			break;
+		}
+		return 0;
+	}
+};
+
+void test_extract_to_sink()
+{
+	context ctx;
+	std::vector<uint8_t> bindata;
+	make_cue_bin(path("sink.cue"), path("sink.bin"), "sink.bin", bindata);
+	chdman_create_cd_options co;
+	chdman_create_cd_options_init(&co);
+	std::string const cue = path("sink.cue"), chd = path("sink.chd");
+	co.input = cue.c_str();
+	co.out.output = chd.c_str();
+	co.out.force = 1;
+	CHECK_OK(ctx, chdman_create_cd(ctx, &co));
+
+	// every CD format: the sink gets the TOC first, then the same bytes as the files on disk
+	struct { const char *toc; const char *bin; int split; size_t files; } const cases[] = {
+		{ "s_cue.cue", nullptr, 0, 2 },
+		{ "s_split.cue", "s_split_%02t.bin", 1, 3 },
+		{ "s_gdi.gdi", nullptr, 0, 3 },
+		{ "s_toc.toc", nullptr, 0, 2 },
+	};
+	for (auto const &c : cases)
+	{
+		std::string const toc = path(c.toc);
+		std::string const bin = c.bin ? path(c.bin) : std::string();
+		chdman_extract_cd_options eo;
+		chdman_extract_cd_options_init(&eo);
+		eo.input = chd.c_str();
+		eo.output = toc.c_str();
+		eo.output_bin = c.bin ? bin.c_str() : nullptr;
+		eo.split_bin = c.split;
+		eo.force = 1;
+		CHECK_OK(ctx, chdman_extract_cd(ctx, &eo));
+
+		std::string const virt = (g_work / "virtual" / c.toc).string();
+		std::string const virtbin = c.bin ? (g_work / "virtual" / c.bin).string() : std::string();
+		eo.output = virt.c_str();
+		eo.output_bin = c.bin ? virtbin.c_str() : nullptr;
+		eo.force = 0; // ignored: nothing is written
+		sink_files sink;
+		CHECK_OK(ctx, chdman_extract_cd_to_sink(ctx, &eo, sink_files::callback, &sink));
+		CHECK(sink.order_ok && !sink.open);
+		CHECK(sink.files.size() == c.files);
+		CHECK(!fs::exists(g_work / "virtual"));
+		for (size_t i = 0; i < sink.files.size(); i++)
+		{
+			fs::path const name = fs::path(sink.files[i].first);
+			CHECK(name.parent_path() == g_work / "virtual");
+			CHECK(read_file((g_work / name.filename()).string()) == sink.files[i].second);
+		}
+		if (!sink.files.empty())
+			CHECK_EQ_STR(sink.files[0].first, virt);
+	}
+
+	// raw extraction
+	CHECK_OK(ctx, extract_raw(ctx, chd, path("s_raw.raw")));
+	chdman_extract_raw_options ro;
+	chdman_extract_raw_options_init(&ro);
+	ro.input = chd.c_str();
+	ro.output = "unused.raw";
+	sink_files raw;
+	CHECK_OK(ctx, chdman_extract_raw_to_sink(ctx, &ro, sink_files::callback, &raw));
+	CHECK(raw.order_ok && raw.files.size() == 1);
+	if (raw.files.size() == 1)
+	{
+		CHECK_EQ_STR(raw.files[0].first, "unused.raw");
+		CHECK(raw.files[0].second == read_file(path("s_raw.raw")));
+	}
+
+	// a non-zero return cancels, and a NULL callback is rejected
+	chdman_extract_cd_options eo;
+	chdman_extract_cd_options_init(&eo);
+	eo.input = chd.c_str();
+	eo.output = "x.cue";
+	sink_files cancel;
+	cancel.cancel_after_data = 1;
+	CHECK(chdman_extract_cd_to_sink(ctx, &eo, sink_files::callback, &cancel) == CHDMAN_ERR_CANCELLED);
+	CHECK(chdman_extract_cd_to_sink(ctx, &eo, nullptr, nullptr) == CHDMAN_ERR_INVALID_ARGUMENT);
+	CHECK(chdman_extract_raw_to_sink(ctx, &ro, nullptr, nullptr) == CHDMAN_ERR_INVALID_ARGUMENT);
+	// the context still works afterwards
+	sink_files again;
+	CHECK_OK(ctx, chdman_extract_cd_to_sink(ctx, &eo, sink_files::callback, &again));
+	CHECK(again.files.size() == 2);
+}
+
 void test_dvd_and_hd()
 {
 	context ctx;
@@ -887,6 +1009,7 @@ int main()
 		{ "copy_and_codecs", test_copy_and_codecs },
 		{ "metadata_and_fix", test_metadata_and_fix },
 		{ "cd_roundtrip", test_cd_roundtrip },
+		{ "extract_to_sink", test_extract_to_sink },
 		{ "dvd_and_hd", test_dvd_and_hd },
 		{ "ld_roundtrip", test_ld_roundtrip },
 		{ "errors_and_cancel", test_errors_and_cancel },

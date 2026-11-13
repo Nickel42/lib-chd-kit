@@ -382,6 +382,39 @@ CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_raw(chdman_context *ctx, con
 CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_cd(chdman_context *ctx, const chdman_extract_cd_options *opts);
 CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_ld(chdman_context *ctx, const chdman_extract_ld_options *opts);
 
+/* --------------------------------------------------------- extract to sink */
+
+/*
+ * Streaming extraction: the files chdman_extract_raw / chdman_extract_cd
+ * would write are passed to a callback instead, so nothing touches the disk.
+ * The output and output_bin options only pick the format and name the files;
+ * force is ignored.
+ *
+ * Each file arrives as one CHDMAN_SINK_BEGIN_FILE, then zero or more
+ * CHDMAN_SINK_DATA blocks holding its bytes in order, then one
+ * CHDMAN_SINK_END_FILE. name is the path the file would have been written to
+ * and is set for every event; data and length are set for CHDMAN_SINK_DATA
+ * only. The data pointer is valid only during the call. Blocks are at most
+ * 32 MiB and, for CD data files, hold whole frames.
+ *
+ * chdman_extract_cd_to_sink delivers the TOC (.cue, .gdi or cdrdao .toc,
+ * with the platform's line endings) first, then the data files in track
+ * order. The bytes are identical to what chdman_extract_cd writes.
+ *
+ * Return non-zero from the callback to cancel: the call then fails with
+ * CHDMAN_ERR_CANCELLED. Called on the thread that invoked the operation.
+ */
+typedef enum chdman_sink_event {
+	CHDMAN_SINK_BEGIN_FILE = 0,
+	CHDMAN_SINK_DATA = 1,
+	CHDMAN_SINK_END_FILE = 2
+} chdman_sink_event;
+
+typedef int (CHDMAN_CALL *chdman_sink_fn)(void *user, chdman_sink_event event, const char *name, const uint8_t *data, size_t length);
+
+CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_raw_to_sink(chdman_context *ctx, const chdman_extract_raw_options *opts, chdman_sink_fn fn, void *user);
+CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_cd_to_sink(chdman_context *ctx, const chdman_extract_cd_options *opts, chdman_sink_fn fn, void *user);
+
 /* ---------------------------------------------------------------- metadata */
 
 /*
