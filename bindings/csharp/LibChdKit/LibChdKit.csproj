@@ -18,6 +18,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>LibChdKit</RootNamespace>
     <AssemblyName>LibChdKit</AssemblyName>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

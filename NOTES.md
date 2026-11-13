@@ -27,7 +27,7 @@ Done and verified on macOS 27.0.1 (Apple silicon):
   - `parity_upstream`: unmodified upstream chdman and lib-chd-kit produce
     17 byte-identical outputs.
   - Two CLI smoke tests.
-- The dylib exports only the 60 `chdman_*` functions. The static archive is
+- The dylib exports only the 62 `chdman_*` functions. The static archive is
   prelinked so bundled zlib/zstd/FLAC symbols are private.
 - `examples/swift` was compiled and run, against both the dylib and the
   static library.
@@ -35,7 +35,7 @@ Done and verified on macOS 27.0.1 (Apple silicon):
   struct sizes match C `sizeof`: create_raw=88, create_hd=120,
   verify_result=176, metadata_entry=40.
 - Windows: the whole tree cross-compiles and links with mingw-w64 (GCC 16),
-  and the DLL exports exactly the 60 API functions.
+  and the DLL exports exactly the 62 API functions.
 
 **Not done yet (the reason for moving to Windows):**
 
@@ -107,7 +107,7 @@ first:
 - **CRT:** static by default (`/MT`), via `CMAKE_MSVC_RUNTIME_LIBRARY`.
 - **Exports:** the `CHDMAN_API` macro (`__declspec(dllexport)` when
   `CHDMAN_BUILDING_SHARED` is defined) controls them. Check with
-  `dumpbin /exports chdkit.dll`, which should list 60 `chdman_*` functions.
+  `dumpbin /exports chdkit.dll`, which should list 62 `chdman_*` functions.
 - **Test DLL copying:** the tests copy `chdkit.dll` next to the test exe
   after each build. The CLI is built in the same directory as the DLL.
 

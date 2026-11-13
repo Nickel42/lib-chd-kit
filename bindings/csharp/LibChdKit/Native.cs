@@ -13,6 +13,11 @@ namespace LibChdKit.Interop
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     internal delegate void LogCallback(IntPtr user, ChdmanLogLevel level, IntPtr message);
 
+    internal enum SinkEvent : int { BeginFile = 0, Data = 1, EndFile = 2 }
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate int SinkCallback(IntPtr user, SinkEvent ev, IntPtr name, IntPtr data, nuint length);
+
     /// <summary>Owns a chdman_context. Passing it to a native call keeps it alive for the call's duration.</summary>
     internal sealed class ContextHandle : SafeHandle
     {
@@ -280,6 +285,8 @@ namespace LibChdKit.Interop
         [DllImport(Lib)] public static extern ChdmanStatus chdman_extract_raw(ContextHandle ctx, [In] ref ExtractRawOptions o);
         [DllImport(Lib)] public static extern ChdmanStatus chdman_extract_cd(ContextHandle ctx, [In] ref ExtractCdOptions o);
         [DllImport(Lib)] public static extern ChdmanStatus chdman_extract_ld(ContextHandle ctx, [In] ref ExtractLdOptions o);
+        [DllImport(Lib)] public static extern ChdmanStatus chdman_extract_raw_to_sink(ContextHandle ctx, [In] ref ExtractRawOptions o, SinkCallback fn, IntPtr user);
+        [DllImport(Lib)] public static extern ChdmanStatus chdman_extract_cd_to_sink(ContextHandle ctx, [In] ref ExtractCdOptions o, SinkCallback fn, IntPtr user);
 
         [DllImport(Lib)] public static extern void chdman_add_metadata_options_init(ref AddMetadataOptions o);
         [DllImport(Lib)] public static extern ChdmanStatus chdman_add_metadata(ContextHandle ctx, [In] ref AddMetadataOptions o);

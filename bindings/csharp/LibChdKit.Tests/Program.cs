@@ -177,6 +177,54 @@ using (var chdman = new Chdman())
         catch (AggregateException ex) { Check(ex.InnerException is ChdmanException { Status: ChdmanStatus.Cancelled }, $"Cancel() from another thread ({ex.InnerException?.Message})"); }
         chdman.Progress = null;
     }
+
+    // streaming extraction: the same bytes as the files ExtractCd/ExtractRaw write
+    var disc = new byte[(300 + 151) * 2352];
+    rng.NextBytes(disc);
+    for (int f = 0; f < 300; f++)
+    {
+        var s = disc.AsSpan(f * 2352, 16);
+        s.Clear();
+        s.Slice(1, 10).Fill(0xff);
+        s[15] = 1; // mode 1 header
+    }
+    File.WriteAllBytes(P("disc.bin"), disc);
+    File.WriteAllText(P("disc.cue"), "FILE \"disc.bin\" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 01 00:04:00\n");
+    chdman.CreateCd(P("disc.cue"), P("disc.chd"));
+
+    var virtualDir = Path.Combine(dir, "virtual");
+    foreach (var (toc, bin, split, count) in new[] { ("c.cue", (string?)null, false, 2), ("s.cue", "s %t.bin", true, 3), ("g.gdi", null, false, 3), ("t.toc", null, false, 2) })
+    {
+        chdman.ExtractCd(P("disc.chd"), P(toc), bin is null ? null : P(bin), split);
+        var sink = new CollectingSink();
+        chdman.ExtractCdToSink(P("disc.chd"), Path.Combine(virtualDir, toc), sink, bin is null ? null : Path.Combine(virtualDir, bin), split);
+        Check(sink.Files.Count == count, $"{toc}: {count} files streamed ({sink.Files.Count})");
+        Check(sink.Files.Count > 0 && sink.Files[0].Name == Path.Combine(virtualDir, toc), $"{toc}: TOC first");
+        Check(sink.Files.All(f => Path.GetDirectoryName(f.Name) == virtualDir && File.ReadAllBytes(P(Path.GetFileName(f.Name))).SequenceEqual(f.Data.ToArray())),
+            $"{toc}: streamed files match the extracted ones");
+    }
+    Check(!Directory.Exists(virtualDir), "streaming writes nothing");
+    var cueSink = new CollectingSink();
+    chdman.ExtractCdToSink(P("disc.chd"), "x.cue", cueSink);
+    Check(cueSink.Files.Count == 2 && cueSink.Files[1].Name == "x.bin" && cueSink.Files[1].Data.ToArray().SequenceEqual(disc), "streamed bin equals the original bin");
+
+    var rawSink = new CollectingSink();
+    chdman.ExtractRawToSink(P("raw.chd"), "whole.raw", rawSink);
+    Check(rawSink.Files.Count == 1 && rawSink.Files[0].Name == "whole.raw" && rawSink.Files[0].Data.ToArray().SequenceEqual(image), "raw to sink");
+    var partSink = new CollectingSink();
+    chdman.ExtractRawToSink(P("raw.chd"), "part.raw", partSink, new ChdRange { StartHunk = 1, LengthBytes = 1000 });
+    Check(partSink.Files.Count == 1 && partSink.Files[0].Data.ToArray().SequenceEqual(image.Skip(4096).Take(1000)), "partial raw to sink");
+
+    // a sink that throws cancels the operation; a cancelled token stops it
+    Throws<InvalidDataException>(() => chdman.ExtractCdToSink(P("disc.chd"), "x.cue", new CollectingSink { ThrowOnData = true }), "sink exception propagates");
+    using (var cts = new CancellationTokenSource())
+    {
+        var sink = new CollectingSink { OnData = cts.Cancel };
+        Throws<OperationCanceledException>(() => chdman.ExtractRawToSink(P("raw.chd"), "x.raw", sink, cancellationToken: cts.Token), "token cancels a streaming extraction");
+    }
+    var again = new CollectingSink();
+    chdman.ExtractCdToSink(P("disc.chd"), "x.gdi", again);
+    Check(again.Files.Count == 3, "usable after a failed streaming extraction");
 }
 
 // a disposed instance refuses work, and Cancel() after Dispose is harmless
@@ -196,6 +244,36 @@ Check(results.All(r => r == sha1), "parallel instances");
 
 Console.WriteLine($"{checks} checks, {failures} failures");
 return failures == 0 ? 0 : 1;
+
+// Collects streamed files in memory and checks the call order.
+sealed class CollectingSink : ChdExtractSink
+{
+    public List<(string Name, MemoryStream Data)> Files { get; } = new();
+    public bool ThrowOnData { get; set; }
+    public Action? OnData { get; set; }
+    bool _open;
+
+    public override void BeginFile(string name)
+    {
+        if (_open) throw new InvalidOperationException("BeginFile while a file is open");
+        Files.Add((name, new MemoryStream()));
+        _open = true;
+    }
+
+    public override void Write(ReadOnlySpan<byte> data)
+    {
+        if (!_open) throw new InvalidOperationException("Write outside a file");
+        if (ThrowOnData) throw new InvalidDataException("from sink");
+        OnData?.Invoke();
+        Files[^1].Data.Write(data);
+    }
+
+    public override void EndFile()
+    {
+        if (!_open) throw new InvalidOperationException("EndFile outside a file");
+        _open = false;
+    }
+}
 
 // Progress<T> posts to the thread pool; tests want reports inline.
 sealed class SyncProgress : IProgress<ChdmanProgress>

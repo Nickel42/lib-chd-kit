@@ -168,6 +168,58 @@ chdman_status run(chdman_context *ctx, F &&f) noexcept
 	}
 }
 
+chdman::extract_raw_options convert_extract_raw(const chdman_extract_raw_options *opts)
+{
+	chdman_extract_raw_options const args = read_struct(opts, chdman_extract_raw_options_init);
+	chdman::extract_raw_options o;
+	o.input = req_str(args.input, "Input file name");
+	o.input_parent = opt_str(args.input_parent);
+	o.output = req_str(args.output, "Output file name");
+	o.force = args.force != 0;
+	o.range = convert(args.range);
+	return o;
+}
+
+chdman::extract_cd_options convert_extract_cd(const chdman_extract_cd_options *opts)
+{
+	chdman_extract_cd_options const args = read_struct(opts, chdman_extract_cd_options_init);
+	chdman::extract_cd_options o;
+	o.input = req_str(args.input, "Input file name");
+	o.input_parent = opt_str(args.input_parent);
+	o.output = req_str(args.output, "Output file name");
+	o.output_bin = opt_str(args.output_bin);
+	o.split_bin = args.split_bin != 0;
+	o.force = args.force != 0;
+	return o;
+}
+
+// Forwards an extraction to a chdman_sink_fn; a non-zero return cancels.
+class callback_sink : public chdman::extract_sink
+{
+public:
+	callback_sink(chdman_sink_fn fn, void *user) : m_fn(fn), m_user(user) { }
+
+	void begin_file(std::string const &name) override
+	{
+		m_name = name;
+		call(CHDMAN_SINK_BEGIN_FILE, nullptr, 0);
+	}
+
+	void write(const void *data, size_t length) override { call(CHDMAN_SINK_DATA, static_cast<const uint8_t *>(data), length); }
+	void end_file() override { call(CHDMAN_SINK_END_FILE, nullptr, 0); }
+
+private:
+	void call(chdman_sink_event event, const uint8_t *data, size_t length)
+	{
+		if (m_fn(m_user, event, m_name.c_str(), data, length) != 0)
+			throw chdman::error(CHDMAN_ERR_CANCELLED, "Operation cancelled");
+	}
+
+	chdman_sink_fn m_fn;
+	void *m_user;
+	std::string m_name;
+};
+
 void copy_sha1(char (&dest)[41], std::string const &src)
 {
 	std::memset(dest, 0, sizeof(dest));
@@ -596,29 +648,34 @@ CHDMAN_API void CHDMAN_CALL chdman_extract_ld_options_init(chdman_extract_ld_opt
 CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_raw(chdman_context *ctx, const chdman_extract_raw_options *opts)
 {
 	return run(ctx, [&] {
-		chdman_extract_raw_options const args = read_struct(opts, chdman_extract_raw_options_init);
-		chdman::extract_raw_options o;
-		o.input = req_str(args.input, "Input file name");
-		o.input_parent = opt_str(args.input_parent);
-		o.output = req_str(args.output, "Output file name");
-		o.force = args.force != 0;
-		o.range = convert(args.range);
-		chdman::extract_raw(ctx->session, o);
+		chdman::extract_raw(ctx->session, convert_extract_raw(opts));
 	});
 }
 
 CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_cd(chdman_context *ctx, const chdman_extract_cd_options *opts)
 {
 	return run(ctx, [&] {
-		chdman_extract_cd_options const args = read_struct(opts, chdman_extract_cd_options_init);
-		chdman::extract_cd_options o;
-		o.input = req_str(args.input, "Input file name");
-		o.input_parent = opt_str(args.input_parent);
-		o.output = req_str(args.output, "Output file name");
-		o.output_bin = opt_str(args.output_bin);
-		o.split_bin = args.split_bin != 0;
-		o.force = args.force != 0;
-		chdman::extract_cd(ctx->session, o);
+		chdman::extract_cd(ctx->session, convert_extract_cd(opts));
+	});
+}
+
+CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_raw_to_sink(chdman_context *ctx, const chdman_extract_raw_options *opts, chdman_sink_fn fn, void *user)
+{
+	return run(ctx, [&] {
+		if (!fn)
+			throw chdman::error(CHDMAN_ERR_INVALID_ARGUMENT, "Sink callback is NULL");
+		callback_sink sink(fn, user);
+		chdman::extract_raw(ctx->session, convert_extract_raw(opts), &sink);
+	});
+}
+
+CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_cd_to_sink(chdman_context *ctx, const chdman_extract_cd_options *opts, chdman_sink_fn fn, void *user)
+{
+	return run(ctx, [&] {
+		if (!fn)
+			throw chdman::error(CHDMAN_ERR_INVALID_ARGUMENT, "Sink callback is NULL");
+		callback_sink sink(fn, user);
+		chdman::extract_cd(ctx->session, convert_extract_cd(opts), &sink);
 	});
 }
 

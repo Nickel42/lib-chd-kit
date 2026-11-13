@@ -937,7 +937,42 @@ private:
 //  CD TOC OUTPUT
 //**************************************************************************
 
-void output_track_metadata(int mode, util::core_file &file, int tracknum, const cdrom_file::track_info &info, const std::string &filename, uint32_t frameoffs, uint64_t outputoffs)
+// TOC text: written to the file line by line as chdman does, or, with no
+// file, collected (with the same platform line endings) for an extract_sink
+class toc_writer
+{
+public:
+	explicit toc_writer(util::core_file *file) : m_file(file) { }
+
+	template <typename Format, typename... Params> void printf(Format &&fmt, Params &&...args)
+	{
+		std::string const s = util::string_format(std::forward<Format>(fmt), std::forward<Params>(args)...);
+		if (m_file)
+		{
+			m_file->puts(s);
+			return;
+		}
+		for (char const ch : s)
+		{
+			if (ch != '\n')
+				m_text += ch;
+			else if (CRLF == 1)
+				m_text += '\r';
+			else if (CRLF == 2)
+				m_text += '\n';
+			else
+				m_text += "\r\n";
+		}
+	}
+
+	std::string const &text() const noexcept { return m_text; }
+
+private:
+	util::core_file *m_file;
+	std::string m_text;
+};
+
+void output_track_metadata(int mode, toc_writer &file, int tracknum, const cdrom_file::track_info &info, const std::string &filename, uint32_t frameoffs, uint64_t outputoffs)
 {
 	if (mode == MODE_GDI)
 	{
@@ -1947,7 +1982,7 @@ void copy(session &s, copy_options const &opts)
 //  EXTRACT
 //**************************************************************************
 
-void extract_raw(session &s, extract_raw_options const &opts)
+void extract_raw(session &s, extract_raw_options const &opts, extract_sink *sink)
 {
 	chd_file input_parent_chd;
 	chd_file input_chd;
@@ -1957,6 +1992,28 @@ void extract_raw(session &s, extract_raw_options const &opts)
 
 	if (opts.output.empty())
 		fail(CHDMAN_ERR_INVALID_ARGUMENT, "Output file name is required");
+
+	if (sink)
+	{
+		std::vector<uint8_t> buffer((TEMP_BUFFER_SIZE / input_chd.hunk_bytes()) * input_chd.hunk_bytes());
+		sink->begin_file(opts.output);
+		for (uint64_t offset = input_start; offset < input_end; )
+		{
+			s.progress(CHDMAN_PHASE_EXTRACTING, double(offset - input_start) / double(input_end - input_start));
+
+			uint32_t bytes_to_read = (std::min<uint64_t>)(buffer.size(), input_end - offset);
+			std::error_condition err = input_chd.read_bytes(offset, &buffer[0], bytes_to_read);
+			if (err)
+				fail(err, "Error reading CHD file (%s): %s", opts.input, err.message());
+
+			sink->write(&buffer[0], bytes_to_read);
+			offset += bytes_to_read;
+		}
+		sink->end_file();
+		s.progress(CHDMAN_PHASE_EXTRACTING, 1.0, 0.0, true);
+		return;
+	}
+
 	check_existing_output_file(opts.force, opts.output);
 
 	s.info(util::string_format("Output File:  %s", opts.output));
@@ -2001,7 +2058,7 @@ void extract_raw(session &s, extract_raw_options const &opts)
 	guard.dismiss();
 }
 
-void extract_cd(session &s, extract_cd_options const &opts)
+void extract_cd(session &s, extract_cd_options const &opts, extract_sink *sink)
 {
 	chd_file input_parent_chd;
 	chd_file input_chd;
@@ -2021,7 +2078,8 @@ void extract_cd(session &s, extract_cd_options const &opts)
 
 	if (opts.output.empty())
 		fail(CHDMAN_ERR_INVALID_ARGUMENT, "Output file name is required");
-	check_existing_output_file(opts.force, opts.output);
+	if (!sink)
+		check_existing_output_file(opts.force, opts.output);
 
 	// determine output type based on the specified file extension
 	int mode = MODE_NORMAL;
@@ -2089,10 +2147,18 @@ void extract_cd(session &s, extract_cd_options const &opts)
 	util::core_file::ptr output_toc_file;
 	std::string trackbin_name;
 
-	std::error_condition filerr = util::core_file::open(opts.output, OPEN_FLAG_WRITE | OPEN_FLAG_CREATE | OPEN_FLAG_NO_BOM, output_toc_file);
-	if (filerr)
-		throw error(CHDMAN_ERR_FILE_OPEN, util::string_format("Unable to open file (%s): %s", opts.output, filerr.message()));
-	output_guard guard(opts.output);
+	output_guard guard;
+	std::error_condition filerr;
+	if (!sink)
+	{
+		filerr = util::core_file::open(opts.output, OPEN_FLAG_WRITE | OPEN_FLAG_CREATE | OPEN_FLAG_NO_BOM, output_toc_file);
+		if (filerr)
+			throw error(CHDMAN_ERR_FILE_OPEN, util::string_format("Unable to open file (%s): %s", opts.output, filerr.message()));
+		guard.add(opts.output);
+	}
+
+	// a sink gets the TOC before the data, so it is collected in memory
+	toc_writer toc_out(sink ? nullptr : output_toc_file.get());
 
 	try
 	{
@@ -2161,7 +2227,8 @@ void extract_cd(session &s, extract_cd_options const &opts)
 				fail(CHDMAN_ERR_INVALID_ARGUMENT, "A track number variable (%%t) must be specified in the output bin filename when split bin is enabled");
 
 			// verify output BIN file doesn't exist
-			check_existing_output_file(opts.force, filename_formatted);
+			if (!sink)
+				check_existing_output_file(opts.force, filename_formatted);
 
 			if (track_filenames.empty() || filename_formatted != track_filenames.back())
 				s.info(util::string_format("Output Data:  %s", filename_formatted));
@@ -2172,7 +2239,7 @@ void extract_cd(session &s, extract_cd_options const &opts)
 		// GDI must start with the # of tracks
 		if (mode == MODE_GDI)
 		{
-			output_toc_file->printf("%d\n", toc.numtrks);
+			toc_out.printf("%d\n", toc.numtrks);
 		}
 		else if (mode == MODE_NORMAL)
 		{
@@ -2204,11 +2271,11 @@ void extract_cd(session &s, extract_cd_options const &opts)
 			}
 
 			if (mode2)
-				output_toc_file->printf("CD_ROM_XA\n\n\n");
+				toc_out.printf("CD_ROM_XA\n\n\n");
 			else if (cdda && !mode1)
-				output_toc_file->printf("CD_DA\n\n\n");
+				toc_out.printf("CD_DA\n\n\n");
 			else
-				output_toc_file->printf("CD_ROM\n\n\n");
+				toc_out.printf("CD_ROM\n\n\n");
 		}
 
 		if (cdrom->is_gdrom() && mode == MODE_CUEBIN)
@@ -2277,133 +2344,184 @@ void extract_cd(session &s, extract_cd_options const &opts)
 			}
 		}
 
-		// iterate over tracks and copy all data
-		uint64_t totaloutputoffs = 0;
-		uint64_t outputoffs = 0;
-		uint32_t discoffs = 0;
-		std::vector<uint8_t> buffer;
-
-		for (int tracknum = 0; tracknum < toc.numtrks; tracknum++)
+		// iterate over tracks and copy all data. With write_data false nothing
+		// is read or written and only the TOC text is produced: a sink receives
+		// the TOC first, so it gets a pass of its own before the data.
+		auto process_tracks = [&] (toc_writer &toc_text, bool write_data)
 		{
-			if (track_filenames[tracknum] != trackbin_name)
+			uint64_t totaloutputoffs = 0;
+			uint64_t outputoffs = 0;
+			uint32_t discoffs = 0;
+			std::vector<uint8_t> buffer;
+			bool sink_file_open = false;
+			trackbin_name.clear();
+
+			for (int tracknum = 0; tracknum < toc.numtrks; tracknum++)
 			{
-				totaloutputoffs += outputoffs;
-				outputoffs = 0;
-
-				if (mode != MODE_GDI)
-					discoffs = 0;
-
-				if (output_bin_file)
+				if (track_filenames[tracknum] != trackbin_name)
 				{
-					std::error_condition const flusherr = output_bin_file->flush();
-					if (flusherr)
-						fail(flusherr, "Error writing to file (%s)", trackbin_name);
-				}
-				output_bin_file.reset();
+					totaloutputoffs += outputoffs;
+					outputoffs = 0;
 
-				trackbin_name = track_filenames[tracknum];
+					if (mode != MODE_GDI)
+						discoffs = 0;
 
-				filerr = util::core_file::open(trackbin_name, OPEN_FLAG_WRITE | OPEN_FLAG_CREATE, output_bin_file);
-				if (filerr)
-					throw error(CHDMAN_ERR_FILE_OPEN, util::string_format("Unable to open file (%s): %s", trackbin_name, filerr.message()));
-
-				guard.add(trackbin_name);
-			}
-
-			if (cdrom->is_gdrom() && mode == MODE_CUEBIN)
-			{
-				if (tracknum == 0)
-					output_toc_file->printf("REM SINGLE-DENSITY AREA\n");
-				else if (toc.tracks[tracknum].physframeofs == 45000)
-					output_toc_file->printf("REM HIGH-DENSITY AREA\n");
-			}
-
-			// output the metadata about the track to the TOC file
-			const cdrom_file::track_info &trackinfo = toc.tracks[tracknum];
-			output_track_metadata(mode, *output_toc_file, tracknum, trackinfo, std::string(core_filename_extract_base(trackbin_name)), discoffs, outputoffs);
-
-			// If this is bin/cue output and the CHD contains subdata, warn the user and don't include
-			// the subdata size in the buffer calculation.
-			uint32_t output_frame_size = trackinfo.datasize + ((trackinfo.subtype != cdrom_file::CD_SUB_NONE) ? trackinfo.subsize : 0);
-			if (trackinfo.subtype != cdrom_file::CD_SUB_NONE && ((mode == MODE_CUEBIN) || (mode == MODE_GDI)))
-			{
-				s.warning(util::string_format("Warning: Track %d has subcode data.  bin/cue and gdi formats cannot contain subcode data and it will be omitted.", tracknum+1));
-				s.warning("       : This may affect usage of the output image.  Use bin/toc output to keep all data.");
-				output_frame_size = trackinfo.datasize;
-			}
-
-			// resize the buffer for the track
-			buffer.resize((TEMP_BUFFER_SIZE / output_frame_size) * output_frame_size);
-
-			// now read and output the actual data
-			uint32_t bufferoffs = 0;
-			uint32_t actualframes = trackinfo.frames - trackinfo.padframes + trackinfo.splitframes;
-			for (uint32_t frame = 0; frame < actualframes; frame++)
-			{
-				s.progress(CHDMAN_PHASE_EXTRACTING, double(totaloutputoffs + outputoffs) / double(total_bytes));
-
-				int trk, frameofs;
-				if (tracknum > 0 && frame < trackinfo.splitframes)
-				{
-					// pull data from previous track, the reverse of how splitframes is used when making the GD-ROM CHDs
-					trk = tracknum - 1;
-					frameofs = toc.tracks[trk].frames - trackinfo.splitframes + frame;
-				}
-				else
-				{
-					trk = tracknum;
-					frameofs = frame - trackinfo.splitframes;
-				}
-
-				// read the data
-				if (!cdrom->read_data(cdrom->get_track_start_phys(trk) + frameofs, &buffer[bufferoffs], toc.tracks[trk].trktype, true))
-					fail(CHDMAN_ERR_CHD, "Error reading frame %d of track %d from CHD file (%s)", frameofs, trk + 1, opts.input);
-
-				// for CDRWin and GDI audio tracks must be reversed
-				// in the case of GDI and CHD version < 5 we assuming source CHD image is GDROM so audio tracks is already reversed
-				if (((mode == MODE_GDI && input_chd.version() > 4) || (mode == MODE_CUEBIN)) && (toc.tracks[trk].trktype == cdrom_file::CD_TRACK_AUDIO))
-					for (int swapindex = 0; swapindex < toc.tracks[trk].datasize; swapindex += 2)
+					if (write_data && !sink && output_bin_file)
 					{
-						uint8_t swaptemp = buffer[bufferoffs + swapindex];
-						buffer[bufferoffs + swapindex] = buffer[bufferoffs + swapindex + 1];
-						buffer[bufferoffs + swapindex + 1] = swaptemp;
+						std::error_condition const flusherr = output_bin_file->flush();
+						if (flusherr)
+							fail(flusherr, "Error writing to file (%s)", trackbin_name);
 					}
-				bufferoffs += toc.tracks[trk].datasize;
-				discoffs++;
 
-				// read the subcode data
-				if (toc.tracks[trk].subtype != cdrom_file::CD_SUB_NONE && (mode == MODE_NORMAL))
-				{
-					if (!cdrom->read_subcode(cdrom->get_track_start_phys(trk) + frameofs, &buffer[bufferoffs], true))
-						fail(CHDMAN_ERR_CHD, "Error reading subcode for frame %d of track %d from CHD file (%s)", frameofs, trk + 1, opts.input);
-					bufferoffs += toc.tracks[trk].subsize;
+					trackbin_name = track_filenames[tracknum];
+
+					if (write_data && sink)
+					{
+						if (sink_file_open)
+							sink->end_file();
+						sink->begin_file(trackbin_name);
+						sink_file_open = true;
+					}
+					else if (write_data)
+					{
+						output_bin_file.reset();
+
+						filerr = util::core_file::open(trackbin_name, OPEN_FLAG_WRITE | OPEN_FLAG_CREATE, output_bin_file);
+						if (filerr)
+							throw error(CHDMAN_ERR_FILE_OPEN, util::string_format("Unable to open file (%s): %s", trackbin_name, filerr.message()));
+
+						guard.add(trackbin_name);
+					}
 				}
 
-				// write it out if we need to
-				if (bufferoffs == buffer.size() || frame == actualframes - 1)
+				if (cdrom->is_gdrom() && mode == MODE_CUEBIN)
 				{
-					output_bin_file->seek(outputoffs, SEEK_SET);
-					auto const [writerr, byteswritten] = write(*output_bin_file, &buffer[0], bufferoffs);
-					if (writerr)
-						fail(writerr, "Error writing frame %d to file (%s): %s", frame, trackbin_name, writerr.message());
-					outputoffs += bufferoffs;
-					bufferoffs = 0;
+					if (tracknum == 0)
+						toc_text.printf("REM SINGLE-DENSITY AREA\n");
+					else if (toc.tracks[tracknum].physframeofs == 45000)
+						toc_text.printf("REM HIGH-DENSITY AREA\n");
 				}
+
+				// output the metadata about the track to the TOC file
+				const cdrom_file::track_info &trackinfo = toc.tracks[tracknum];
+				output_track_metadata(mode, toc_text, tracknum, trackinfo, std::string(core_filename_extract_base(trackbin_name)), discoffs, outputoffs);
+
+				// If this is bin/cue output and the CHD contains subdata, warn the user and don't include
+				// the subdata size in the buffer calculation.
+				uint32_t output_frame_size = trackinfo.datasize + ((trackinfo.subtype != cdrom_file::CD_SUB_NONE) ? trackinfo.subsize : 0);
+				if (trackinfo.subtype != cdrom_file::CD_SUB_NONE && ((mode == MODE_CUEBIN) || (mode == MODE_GDI)))
+				{
+					if (write_data)
+					{
+						s.warning(util::string_format("Warning: Track %d has subcode data.  bin/cue and gdi formats cannot contain subcode data and it will be omitted.", tracknum+1));
+						s.warning("       : This may affect usage of the output image.  Use bin/toc output to keep all data.");
+					}
+					output_frame_size = trackinfo.datasize;
+				}
+
+				// resize the buffer for the track
+				if (write_data)
+					buffer.resize((TEMP_BUFFER_SIZE / output_frame_size) * output_frame_size);
+
+				// now read and output the actual data
+				uint32_t bufferoffs = 0;
+				uint32_t actualframes = trackinfo.frames - trackinfo.padframes + trackinfo.splitframes;
+				for (uint32_t frame = 0; frame < actualframes; frame++)
+				{
+					if (write_data)
+						s.progress(CHDMAN_PHASE_EXTRACTING, double(totaloutputoffs + outputoffs) / double(total_bytes));
+
+					int trk, frameofs;
+					if (tracknum > 0 && frame < trackinfo.splitframes)
+					{
+						// pull data from previous track, the reverse of how splitframes is used when making the GD-ROM CHDs
+						trk = tracknum - 1;
+						frameofs = toc.tracks[trk].frames - trackinfo.splitframes + frame;
+					}
+					else
+					{
+						trk = tracknum;
+						frameofs = frame - trackinfo.splitframes;
+					}
+
+					// read the data
+					if (write_data)
+					{
+						if (!cdrom->read_data(cdrom->get_track_start_phys(trk) + frameofs, &buffer[bufferoffs], toc.tracks[trk].trktype, true))
+							fail(CHDMAN_ERR_CHD, "Error reading frame %d of track %d from CHD file (%s)", frameofs, trk + 1, opts.input);
+
+						// for CDRWin and GDI audio tracks must be reversed
+						// in the case of GDI and CHD version < 5 we assuming source CHD image is GDROM so audio tracks is already reversed
+						if (((mode == MODE_GDI && input_chd.version() > 4) || (mode == MODE_CUEBIN)) && (toc.tracks[trk].trktype == cdrom_file::CD_TRACK_AUDIO))
+							for (int swapindex = 0; swapindex < toc.tracks[trk].datasize; swapindex += 2)
+							{
+								uint8_t swaptemp = buffer[bufferoffs + swapindex];
+								buffer[bufferoffs + swapindex] = buffer[bufferoffs + swapindex + 1];
+								buffer[bufferoffs + swapindex + 1] = swaptemp;
+							}
+					}
+					bufferoffs += toc.tracks[trk].datasize;
+					discoffs++;
+
+					// read the subcode data
+					if (toc.tracks[trk].subtype != cdrom_file::CD_SUB_NONE && (mode == MODE_NORMAL))
+					{
+						if (write_data && !cdrom->read_subcode(cdrom->get_track_start_phys(trk) + frameofs, &buffer[bufferoffs], true))
+							fail(CHDMAN_ERR_CHD, "Error reading subcode for frame %d of track %d from CHD file (%s)", frameofs, trk + 1, opts.input);
+						bufferoffs += toc.tracks[trk].subsize;
+					}
+
+					// write it out if we need to
+					if ((write_data && bufferoffs == buffer.size()) || frame == actualframes - 1)
+					{
+						if (write_data && sink)
+						{
+							sink->write(&buffer[0], bufferoffs);
+						}
+						else if (write_data)
+						{
+							output_bin_file->seek(outputoffs, SEEK_SET);
+							auto const [writerr, byteswritten] = write(*output_bin_file, &buffer[0], bufferoffs);
+							if (writerr)
+								fail(writerr, "Error writing frame %d to file (%s): %s", frame, trackbin_name, writerr.message());
+						}
+						outputoffs += bufferoffs;
+						bufferoffs = 0;
+					}
+				}
+
+				discoffs += trackinfo.padframes;
 			}
 
-			discoffs += trackinfo.padframes;
-		}
+			if (sink_file_open)
+				sink->end_file();
+		};
 
-		// finish up
-		std::error_condition flusherr;
-		if (output_bin_file)
-			flusherr = output_bin_file->flush();
-		if (!flusherr)
-			flusherr = output_toc_file->flush();
-		output_bin_file.reset();
-		output_toc_file.reset();
-		if (flusherr)
-			fail(flusherr, "Error writing output files: %s", flusherr.message());
+		if (sink)
+		{
+			process_tracks(toc_out, false);
+			sink->begin_file(opts.output);
+			sink->write(toc_out.text().data(), toc_out.text().size());
+			sink->end_file();
+
+			toc_writer unused(nullptr);
+			process_tracks(unused, true);
+		}
+		else
+		{
+			process_tracks(toc_out, true);
+
+			// finish up
+			std::error_condition flusherr;
+			if (output_bin_file)
+				flusherr = output_bin_file->flush();
+			if (!flusherr)
+				flusherr = output_toc_file->flush();
+			output_bin_file.reset();
+			output_toc_file.reset();
+			if (flusherr)
+				fail(flusherr, "Error writing output files: %s", flusherr.message());
+		}
 		s.progress(CHDMAN_PHASE_EXTRACTING, 1.0, 0.0, true);
 		s.info("Extraction complete");
 	}
