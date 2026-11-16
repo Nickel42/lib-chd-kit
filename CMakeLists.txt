@@ -5,7 +5,7 @@ if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 endif()
 
-project(lib-chd-kit VERSION 1.0.0 DESCRIPTION "MAME 0.289 CHD tools as a library" LANGUAGES C CXX)
+project(lib-chd-kit VERSION 1.1.0 DESCRIPTION "MAME 0.289 CHD tools as a library" LANGUAGES C CXX)
 set(CHDMAN_MAME_VERSION "0.289")
 
 option(CHDMAN_BUILD_SHARED "Build lib-chd-kit as a shared library (dylib/dll)" ON)
