@@ -30,7 +30,7 @@ jobs:
           - { rid: win-x64,     os: windows-latest, configure: "-A x64",   test: true,  lib: build/Release/chdkit.dll }
           # Cross-compiled on x64, so its tests can't run here.
           - { rid: win-arm64,   os: windows-latest, configure: "-A ARM64", test: false, lib: build/Release/chdkit.dll }
-          - { rid: osx,         os: macos-latest,   configure: "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64", test: true, lib: build/libchdkit.dylib }
+          - { rid: osx,         os: macos-latest,   configure: "'-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'", test: true, lib: build/libchdkit.dylib }
           # The oldest supported Ubuntu LTS images, so the library runs on that glibc or newer.
           - { rid: linux-x64,   os: ubuntu-22.04,     configure: "", test: true, lib: build/libchdkit.so }
           - { rid: linux-arm64, os: ubuntu-22.04-arm, configure: "", test: true, lib: build/libchdkit.so }

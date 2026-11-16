@@ -48,8 +48,18 @@ Files under `vendor/mame/` are unmodified except for the following.
    three times faster. The digests are the same; the pinned header SHA-1s
    in `tests/test_chdman.cpp` would catch a difference.
 
-None of these changes affects the bytes written to CHD files or read from
-them; `tests/parity.cmake`
+## `3rdparty/flac/src/libFLAC/include/config.h`
+
+6. With MSVC on ARM64, `FLAC__HAS_NEONINTRIN` and `FLAC__HAS_A64NEONINTRIN`
+   are 0 (marked "lib-chd-kit"): MSVC can't compile `lpc_intrin_neon.c`'s
+   GCC-style vector initializers, so the Windows ARM64 build uses libFLAC's
+   C code. GCC and Clang on ARM64 keep the NEON code. This is the only
+   change that can make output differ: a Windows ARM64 build's `cdfl` hunks
+   may be compressed differently from a NEON build's, as with any two
+   libFLAC builds. Every such CHD still decodes to the same data.
+
+None of the other changes affects the bytes written to CHD files or read
+from them; `tests/parity.cmake`
 checks that output is byte-identical to the unmodified upstream `chdman`
 logic.
 
@@ -65,8 +75,8 @@ logic.
 ## Updating to a newer MAME
 
 1. Sparse-checkout the new tag (see the paths in `vendor/CMakeLists.txt`).
-2. Re-copy the files and re-apply the four `chd.*` changes and the
-   `hashing.cpp` change above.
+2. Re-copy the files and re-apply the four `chd.*` changes, the
+   `hashing.cpp` change and the libFLAC `config.h` change above.
 3. Diff `src/tools/chdman.cpp` against the previous version and port any
    logic changes into `src/chdman_core.cpp`. That file keeps upstream's
    function names to make this easier.
