@@ -1,0 +1,51 @@
+name: CI
+
+# Builds the library on Windows, macOS and Linux and runs ctest (including the
+# byte-for-byte parity test against unmodified upstream chdman) and the .NET
+# binding's checks. Never publishes anything. Runs when started by hand, on pull
+# requests, and on pushes to main and perf/* branches.
+on:
+  push:
+    branches: [main, "perf/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, configure: "-A x64", libdir: build/Release }
+          - { os: macos-latest,   configure: "",       libdir: build }
+          - { os: ubuntu-latest,  configure: "",       libdir: build }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build ${{ matrix.configure }} -DCMAKE_BUILD_TYPE=Release -DCHDMAN_BUILD_UPSTREAM_REFERENCE=ON
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: ctest (unit tests and upstream parity)
+        run: ctest --test-dir build -C Release --output-on-failure
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: .NET binding checks
+        shell: bash
+        working-directory: bindings/csharp/LibChdKit.Tests
+        run: |
+          libdir="$GITHUB_WORKSPACE/${{ matrix.libdir }}"
+          # Linux has no copy rule in ChdmanNativeCopy.targets: the loader finds libchdkit.so here.
+          export LD_LIBRARY_PATH="$libdir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          dotnet run -c Release -p:ChdmanLibDir="$libdir"

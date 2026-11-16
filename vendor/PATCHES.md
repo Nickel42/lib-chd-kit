@@ -28,8 +28,28 @@ Files under `vendor/mame/` are unmodified except for the following.
    `async_compress_hunk()` read `m_codecs[16]`, one past the end, and
    crash. Upstream chdman never waits on the work queue, so it doesn't hit
    this.
+4. Added `chd_file::hunk_source`, `set_hunk_source()` and `locate_hunk()`
+   (all marked "lib-chd-kit"). `read_hunk()` first asks the hunk source, if
+   one is set, for an already-decoded hunk. `locate_hunk()` returns where a
+   v5 compressed CHD stores a hunk's bytes (codec slot, length, offset,
+   CRC-16), following copies within the file. lib-chd-kit's
+   `src/hunk_pipeline.cpp` uses them to read the stored bytes in file order
+   on one thread and decode them on several, with the same CRC check as
+   `read_hunk()`. Parent references and anything else `locate_hunk()`
+   declines are still decoded by `read_hunk()` itself.
 
-None of these changes affects the bytes written to CHD files; `tests/parity.cmake`
+## `src/lib/util/hashing.cpp`
+
+5. `sha1_creator::append()` hashes whole 64-byte blocks with the x86 SHA
+   extensions (SHA-NI) when the CPU has them, checked once with `cpuid`
+   (marked "lib-chd-kit"). Partial blocks, other CPUs and other
+   architectures use the original scalar code. SHA-1 is the serial step of
+   verify once hunks are decoded on several threads, and SHA-NI is about
+   three times faster. The digests are the same; the pinned header SHA-1s
+   in `tests/test_chdman.cpp` would catch a difference.
+
+None of these changes affects the bytes written to CHD files or read from
+them; `tests/parity.cmake`
 checks that output is byte-identical to the unmodified upstream `chdman`
 logic.
 
@@ -45,7 +65,8 @@ logic.
 ## Updating to a newer MAME
 
 1. Sparse-checkout the new tag (see the paths in `vendor/CMakeLists.txt`).
-2. Re-copy the files and re-apply the three `chd.*` changes above.
+2. Re-copy the files and re-apply the four `chd.*` changes and the
+   `hashing.cpp` change above.
 3. Diff `src/tools/chdman.cpp` against the previous version and port any
    logic changes into `src/chdman_core.cpp`. That file keeps upstream's
    function names to make this easier.

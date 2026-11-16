@@ -225,6 +225,24 @@ using (var chdman = new Chdman())
     var again = new CollectingSink();
     chdman.ExtractCdToSink(P("disc.chd"), "x.gdi", again);
     Check(again.Files.Count == 3, "usable after a failed streaming extraction");
+
+    // extracting and verifying in one pass: the same bytes, and the same verdict as Verify
+    var discVerify = chdman.Verify(P("disc.chd"));
+    var fusedSink = new CollectingSink();
+    var fused = chdman.ExtractCdToSinkAndVerify(P("disc.chd"), "v.cue", fusedSink);
+    Check(fusedSink.Files.Count == 2 && fusedSink.Files[1].Data.ToArray().SequenceEqual(disc), "cue/bin to sink with verify");
+    Check(fused == discVerify && fused.Outcome == ChdVerifyOutcome.Ok, $"fused CD verify matches Verify ({fused})");
+    var rawFusedSink = new CollectingSink();
+    var rawFused = chdman.ExtractRawToSinkAndVerify(P("raw.chd"), "v.raw", rawFusedSink, new ChdRange { StartHunk = 1, LengthBytes = 1000 });
+    Check(rawFusedSink.Files.Count == 1 && rawFusedSink.Files[0].Data.ToArray().SequenceEqual(image.Skip(4096).Take(1000)), "partial raw to sink with verify");
+    Check(rawFused == chdman.Verify(P("raw.chd")) && rawFused.ComputedRawSha1 == Convert.ToHexString(SHA1.HashData(image)).ToLowerInvariant(),
+        $"fused raw verify covers the whole CHD ({rawFused})");
+    using (var single = new Chdman(threads: 1))
+    {
+        var singleSink = new CollectingSink();
+        Check(single.ExtractCdToSinkAndVerify(P("disc.chd"), "v.cue", singleSink) == discVerify && singleSink.Files[1].Data.ToArray().SequenceEqual(disc),
+            "fused verify on one thread");
+    }
 }
 
 // a disposed instance refuses work, and Cancel() after Dispose is harmless

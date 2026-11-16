@@ -92,6 +92,8 @@ private:
 
 // ======================> option structs
 
+struct verify_result;
+
 struct output_options
 {
 	std::string output;
@@ -180,6 +182,7 @@ struct extract_raw_options
 	std::string output;
 	bool force = false;
 	range_options range;
+	verify_result *verify = nullptr; // also verify the CHD in the same pass
 };
 
 struct extract_cd_options
@@ -190,6 +193,7 @@ struct extract_cd_options
 	std::optional<std::string> output_bin;
 	bool split_bin = false;
 	bool force = false;
+	verify_result *verify = nullptr; // also verify the CHD in the same pass
 };
 
 struct extract_ld_options
@@ -300,6 +304,8 @@ void copy(session &s, copy_options const &opts);
 // With a sink, nothing is written to disk and force is ignored: the output
 // names only choose the format and name the files the sink receives.
 // extract_cd gives the sink the TOC file first, then the data files.
+// With opts.verify set, either one also checks the CHD's data SHA-1 as
+// verify() does (without fix), decoding the CHD only once.
 void extract_raw(session &s, extract_raw_options const &opts, extract_sink *sink = nullptr);
 void extract_cd(session &s, extract_cd_options const &opts, extract_sink *sink = nullptr);
 void extract_ld(session &s, extract_ld_options const &opts);

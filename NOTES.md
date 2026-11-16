@@ -27,7 +27,7 @@ Done and verified on macOS 27.0.1 (Apple silicon):
   - `parity_upstream`: unmodified upstream chdman and lib-chd-kit produce
     17 byte-identical outputs.
   - Two CLI smoke tests.
-- The dylib exports only the 62 `chdman_*` functions. The static archive is
+- The dylib exports only the 64 `chdman_*` functions. The static archive is
   prelinked so bundled zlib/zstd/FLAC symbols are private.
 - `examples/swift` was compiled and run, against both the dylib and the
   static library.
@@ -35,7 +35,7 @@ Done and verified on macOS 27.0.1 (Apple silicon):
   struct sizes match C `sizeof`: create_raw=88, create_hd=120,
   verify_result=176, metadata_entry=40.
 - Windows: the whole tree cross-compiles and links with mingw-w64 (GCC 16),
-  and the DLL exports exactly the 62 API functions.
+  and the DLL exports exactly the 64 API functions.
 
 **Not done yet (the reason for moving to Windows):**
 
@@ -107,7 +107,7 @@ first:
 - **CRT:** static by default (`/MT`), via `CMAKE_MSVC_RUNTIME_LIBRARY`.
 - **Exports:** the `CHDMAN_API` macro (`__declspec(dllexport)` when
   `CHDMAN_BUILDING_SHARED` is defined) controls them. Check with
-  `dumpbin /exports chdkit.dll`, which should list 62 `chdman_*` functions.
+  `dumpbin /exports chdkit.dll`, which should list 64 `chdman_*` functions.
 - **Test DLL copying:** the tests copy `chdkit.dll` next to the test exe
   after each build. The CLI is built in the same directory as the DLL.
 
@@ -117,11 +117,14 @@ first:
   with the same function names, using typed option structs, a `session`
   for progress/cancel/log, and errors thrown as `chdman::error`.
   `src/chdman_capi.cpp` catches everything at the C boundary.
-- **Edits to MAME code (three):** `compress_wait_idle()` added to
+- **Edits to MAME code (four):** `compress_wait_idle()` added to
   `chd_file_compressor`, so cancelling mid-compression can't race the I/O
-  thread; two `fprintf(stderr)` calls removed; and `m_codecs` given one
+  thread; two `fprintf(stderr)` calls removed; `m_codecs` given one
   extra slot for the thread that waits on the work queue (otherwise hosts
-  with 18+ CPUs crash on cancel). See `vendor/PATCHES.md`.
+  with 18+ CPUs crash on cancel); and a `hunk_source` hook plus
+  `locate_hunk()` on `chd_file`, so `src/hunk_pipeline.cpp` can decode hunks
+  on other threads for verify and extract. Outside `chd.*`, `hashing.cpp`
+  uses SHA-NI for SHA-1 when the CPU has it. See `vendor/PATCHES.md`.
   None of them changes the bytes written; the parity test proves it.
 - **Metadata editing:** add and delete only work on *uncompressed* CHDs.
   This is upstream behavior (MAME opens compressed v5 CHDs read-only), not
@@ -137,5 +140,5 @@ first:
 ## Updating to a newer MAME
 
 `vendor/PATCHES.md` has the procedure: sparse checkout, re-copy, re-apply
-the three `chd.*` patches, port any `chdman.cpp` changes into
+the four `chd.*` patches and the `hashing.cpp` one, port any `chdman.cpp` changes into
 `src/chdman_core.cpp`, then run the parity test.

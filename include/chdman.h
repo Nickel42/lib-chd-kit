@@ -124,7 +124,12 @@ CHDMAN_API void CHDMAN_CALL chdman_context_destroy(chdman_context *ctx);
 CHDMAN_API void CHDMAN_CALL chdman_context_set_progress(chdman_context *ctx, chdman_progress_fn fn, void *user);
 CHDMAN_API void CHDMAN_CALL chdman_context_set_log(chdman_context *ctx, chdman_log_fn fn, void *user);
 
-/* Limit worker threads used for compression (0 = all processors). */
+/*
+ * Limit worker threads (0 = all processors). Used for compression and, since
+ * 1.1, for decoding hunks ahead in verify and extract (CD and raw, to files
+ * or to a sink; at most 16); 1 keeps those on the calling thread as before.
+ * The output is the same whatever the count.
+ */
 CHDMAN_API void CHDMAN_CALL chdman_context_set_num_processors(chdman_context *ctx, int count);
 
 /*
@@ -414,6 +419,18 @@ typedef int (CHDMAN_CALL *chdman_sink_fn)(void *user, chdman_sink_event event, c
 
 CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_raw_to_sink(chdman_context *ctx, const chdman_extract_raw_options *opts, chdman_sink_fn fn, void *user);
 CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_cd_to_sink(chdman_context *ctx, const chdman_extract_cd_options *opts, chdman_sink_fn fn, void *user);
+
+/*
+ * Since 1.1: the same streaming extractions, which also verify the CHD in
+ * that pass, as chdman_verify does without fix, and write the verdict to
+ * *result (initialize it with chdman_verify_result_init). Every hunk is
+ * hashed as the extraction passes it, read or not, so checking a CHD and
+ * hashing its tracks decode it once. A mismatch is reported in
+ * result->outcome; a hunk that can't be read fails the call, as it fails
+ * chdman_verify.
+ */
+CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_raw_to_sink_verify(chdman_context *ctx, const chdman_extract_raw_options *opts, chdman_sink_fn fn, void *user, chdman_verify_result *result);
+CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_cd_to_sink_verify(chdman_context *ctx, const chdman_extract_cd_options *opts, chdman_sink_fn fn, void *user, chdman_verify_result *result);
 
 /* ---------------------------------------------------------------- metadata */
 

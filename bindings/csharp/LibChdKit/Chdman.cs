@@ -148,7 +148,10 @@ namespace LibChdKit
         /// <summary>Receives chdman's informational lines, warnings and error details on the calling thread.</summary>
         public Action<ChdmanLogLevel, string>? Log { get; set; }
 
-        /// <param name="threads">Compression worker threads; 0 = all processors.</param>
+        /// <param name="threads">
+        /// Worker threads for compression and for decoding in verify and extract; 0 = all processors,
+        /// 1 = decode on the calling thread.
+        /// </param>
         public Chdman(int threads = 0)
         {
             Check(Native.chdman_context_create(out _ctx), null);
@@ -269,7 +272,7 @@ namespace LibChdKit
             var r = new VerifyResult();
             Native.chdman_verify_result_init(ref r);
             Run(cancellationToken, () => Native.chdman_verify(_ctx, ref o, ref r));
-            return new ChdVerifyResult(r.Outcome, r.HeaderRawSha1 ?? "", r.ComputedRawSha1 ?? "", r.HeaderSha1 ?? "", r.ComputedSha1 ?? "");
+            return ToManaged(r);
         }
 
         // ---------------------------------------------------------- create
@@ -385,6 +388,18 @@ namespace LibChdKit
         /// named <paramref name="outputName"/> instead of writing it. Nothing is written to disk.
         /// </summary>
         public void ExtractRawToSink(string input, string outputName, ChdExtractSink sink, ChdRange? range = null, string? inputParent = null, CancellationToken cancellationToken = default)
+            => ExtractRawToSinkCore(input, outputName, sink, range, inputParent, verify: false, cancellationToken);
+
+        /// <summary>
+        /// Like <see cref="ExtractRawToSink"/>,
+        /// and verifies the CHD in the same pass, as <see cref="Verify"/> without fix does: every hunk is hashed as
+        /// the extraction passes it (even outside <paramref name="range"/>), so the CHD is decoded once for both.
+        /// The verdict is in the result; a mismatch doesn't throw, a hunk that can't be read does.
+        /// </summary>
+        public ChdVerifyResult ExtractRawToSinkAndVerify(string input, string outputName, ChdExtractSink sink, ChdRange? range = null, string? inputParent = null, CancellationToken cancellationToken = default)
+            => ExtractRawToSinkCore(input, outputName, sink, range, inputParent, verify: true, cancellationToken)!;
+
+        ChdVerifyResult? ExtractRawToSinkCore(string input, string outputName, ChdExtractSink sink, ChdRange? range, string? inputParent, bool verify, CancellationToken cancellationToken)
         {
             if (sink is null)
                 throw new ArgumentNullException(nameof(sink));
@@ -394,7 +409,15 @@ namespace LibChdKit
             o.InputParent = inputParent;
             o.Output = outputName;
             o.Range = ToNative(range);
-            RunWithSink(sink, cancellationToken, () => Native.chdman_extract_raw_to_sink(_ctx, ref o, _sinkCallback, IntPtr.Zero));
+            if (!verify)
+            {
+                RunWithSink(sink, cancellationToken, () => Native.chdman_extract_raw_to_sink(_ctx, ref o, _sinkCallback, IntPtr.Zero));
+                return null;
+            }
+            var r = new VerifyResult();
+            Native.chdman_verify_result_init(ref r);
+            RunWithSink(sink, cancellationToken, () => Native.chdman_extract_raw_to_sink_verify(_ctx, ref o, _sinkCallback, IntPtr.Zero, ref r));
+            return ToManaged(r);
         }
 
         /// <summary>
@@ -404,6 +427,18 @@ namespace LibChdKit
         /// <paramref name="outputBin"/> pick the format and name the files; nothing is written to disk.
         /// </summary>
         public void ExtractCdToSink(string input, string output, ChdExtractSink sink, string? outputBin = null, bool splitBin = false, string? inputParent = null, CancellationToken cancellationToken = default)
+            => ExtractCdToSinkCore(input, output, sink, outputBin, splitBin, inputParent, verify: false, cancellationToken);
+
+        /// <summary>
+        /// Like <see cref="ExtractCdToSink"/>,
+        /// and verifies the CHD in the same pass, as <see cref="Verify"/> without fix does: every hunk is hashed as
+        /// the extraction passes it (subcode and padding included), so the CHD is decoded once for both. The verdict
+        /// is in the result; a mismatch doesn't throw, a hunk that can't be read does.
+        /// </summary>
+        public ChdVerifyResult ExtractCdToSinkAndVerify(string input, string output, ChdExtractSink sink, string? outputBin = null, bool splitBin = false, string? inputParent = null, CancellationToken cancellationToken = default)
+            => ExtractCdToSinkCore(input, output, sink, outputBin, splitBin, inputParent, verify: true, cancellationToken)!;
+
+        ChdVerifyResult? ExtractCdToSinkCore(string input, string output, ChdExtractSink sink, string? outputBin, bool splitBin, string? inputParent, bool verify, CancellationToken cancellationToken)
         {
             if (sink is null)
                 throw new ArgumentNullException(nameof(sink));
@@ -414,8 +449,19 @@ namespace LibChdKit
             o.Output = output;
             o.OutputBin = outputBin;
             o.SplitBin = splitBin ? 1 : 0;
-            RunWithSink(sink, cancellationToken, () => Native.chdman_extract_cd_to_sink(_ctx, ref o, _sinkCallback, IntPtr.Zero));
+            if (!verify)
+            {
+                RunWithSink(sink, cancellationToken, () => Native.chdman_extract_cd_to_sink(_ctx, ref o, _sinkCallback, IntPtr.Zero));
+                return null;
+            }
+            var r = new VerifyResult();
+            Native.chdman_verify_result_init(ref r);
+            RunWithSink(sink, cancellationToken, () => Native.chdman_extract_cd_to_sink_verify(_ctx, ref o, _sinkCallback, IntPtr.Zero, ref r));
+            return ToManaged(r);
         }
+
+        static ChdVerifyResult ToManaged(VerifyResult r) =>
+            new ChdVerifyResult(r.Outcome, r.HeaderRawSha1 ?? "", r.ComputedRawSha1 ?? "", r.HeaderSha1 ?? "", r.ComputedSha1 ?? "");
 
         /// <summary>Extracts a laserdisc CHD to an AVI.</summary>
         public void ExtractLaserdisc(string input, string output, bool force = false, ulong? startFrame = null, ulong? lengthFrames = null, string? inputParent = null, CancellationToken cancellationToken = default)

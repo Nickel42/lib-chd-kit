@@ -25,7 +25,7 @@
     <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
 
     <PackageId>LibChdKit</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>lib-chd-kit contributors</Authors>
     <Description>MAME 0.289's CHD (Compressed Hunks of Data) tools as a .NET library: create, verify, copy and extract CHD images for CD (cue/bin, gdi, toc), DVD, hard disk, raw and laserdisc media. Output is byte-identical to chdman.</Description>
     <PackageTags>chd;chdman;mame;cd;iso;emulation;compression</PackageTags>

@@ -63,6 +63,16 @@ sealed class HashingSink : ChdExtractSink
 chdman.ExtractCdToSink(@"C:\games\game.chd", "game.cue", new HashingSink(), outputBin: "game (Track %t).bin", splitBin: true);
 ```
 
+`ExtractCdToSinkAndVerify` and `ExtractRawToSinkAndVerify` do the same and
+also verify the CHD in that pass, returning what `Verify` (without fix)
+would. Every hunk is hashed as the extraction passes it, so checking a CHD
+and hashing its tracks decode it once instead of twice.
+
+The `threads` given to `new Chdman(threads)` limit compression and also the
+threads that decode hunks ahead in `Verify` and the extractions (0 = all
+processors, 1 = decode on the calling thread). The results are the same
+whatever the count.
+
 Rules:
 
 - A `Chdman` instance runs one operation at a time (a second concurrent call

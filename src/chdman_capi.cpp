@@ -226,6 +226,32 @@ void copy_sha1(char (&dest)[41], std::string const &src)
 	std::strncpy(dest, src.c_str(), sizeof(dest) - 1);
 }
 
+void copy_verify_result(chdman_verify_result &res, chdman::verify_result const &r)
+{
+	res.outcome = r.outcome;
+	copy_sha1(res.header_raw_sha1, r.header_raw_sha1);
+	copy_sha1(res.computed_raw_sha1, r.computed_raw_sha1);
+	copy_sha1(res.header_sha1, r.header_sha1);
+	copy_sha1(res.computed_sha1, r.computed_sha1);
+}
+
+// Runs a streaming extraction that also verifies the CHD. The caller's
+// result struct is checked before any work and written after.
+template <typename Options, typename Extract>
+void run_sink_verify(chdman_sink_fn fn, chdman_verify_result *result, Options &&o, Extract &&extract)
+{
+	if (!fn)
+		throw chdman::error(CHDMAN_ERR_INVALID_ARGUMENT, "Sink callback is NULL");
+	if (!result)
+		throw chdman::error(CHDMAN_ERR_INVALID_ARGUMENT, "Verify result pointer is NULL");
+	chdman_verify_result res = read_struct(const_cast<const chdman_verify_result *>(result), chdman_verify_result_init);
+	chdman::verify_result r;
+	o.verify = &r;
+	extract(o);
+	copy_verify_result(res, r);
+	write_struct(result, res);
+}
+
 } // anonymous namespace
 
 
@@ -448,11 +474,7 @@ CHDMAN_API chdman_status CHDMAN_CALL chdman_verify(chdman_context *ctx, const ch
 		o.input_parent = opt_str(args.input_parent);
 		o.fix = args.fix != 0;
 		chdman::verify_result r = chdman::verify(ctx->session, o);
-		res.outcome = r.outcome;
-		copy_sha1(res.header_raw_sha1, r.header_raw_sha1);
-		copy_sha1(res.computed_raw_sha1, r.computed_raw_sha1);
-		copy_sha1(res.header_sha1, r.header_sha1);
-		copy_sha1(res.computed_sha1, r.computed_sha1);
+		copy_verify_result(res, r);
 		write_struct(result, res);
 		if (!r.message.empty())
 			ctx->session.info(r.message);
@@ -676,6 +698,22 @@ CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_cd_to_sink(chdman_context *c
 			throw chdman::error(CHDMAN_ERR_INVALID_ARGUMENT, "Sink callback is NULL");
 		callback_sink sink(fn, user);
 		chdman::extract_cd(ctx->session, convert_extract_cd(opts), &sink);
+	});
+}
+
+CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_raw_to_sink_verify(chdman_context *ctx, const chdman_extract_raw_options *opts, chdman_sink_fn fn, void *user, chdman_verify_result *result)
+{
+	return run(ctx, [&] {
+		callback_sink sink(fn, user);
+		run_sink_verify(fn, result, convert_extract_raw(opts), [&] (chdman::extract_raw_options const &o) { chdman::extract_raw(ctx->session, o, &sink); });
+	});
+}
+
+CHDMAN_API chdman_status CHDMAN_CALL chdman_extract_cd_to_sink_verify(chdman_context *ctx, const chdman_extract_cd_options *opts, chdman_sink_fn fn, void *user, chdman_verify_result *result)
+{
+	return run(ctx, [&] {
+		callback_sink sink(fn, user);
+		run_sink_verify(fn, result, convert_extract_cd(opts), [&] (chdman::extract_cd_options const &o) { chdman::extract_cd(ctx->session, o, &sink); });
 	});
 }
 

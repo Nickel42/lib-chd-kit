@@ -336,6 +336,25 @@ public:
 	// read/write
 	std::error_condition codec_process_hunk(uint32_t hunknum);
 	std::error_condition read_hunk(uint32_t hunknum, void *buffer);
+
+	// lib-chd-kit: lets chdman_core decode hunks on other threads (see vendor/PATCHES.md)
+	class hunk_source
+	{
+	public:
+		// supply a decoded hunk: true if it did (err set on failure), false to decode it here as usual
+		virtual bool supply_hunk(uint32_t hunknum, void *buffer, std::error_condition &err) = 0;
+	protected:
+		~hunk_source() = default;
+	};
+	struct hunk_location
+	{
+		int codec;          // 0-3: index into compression(); -1: stored uncompressed
+		uint32_t length;    // bytes stored in the file
+		uint64_t offset;    // file offset of the stored bytes
+		uint16_t crc16;     // CRC-16 of the decoded hunk
+	};
+	void set_hunk_source(hunk_source *source) noexcept { m_hunk_source = source; }
+	bool locate_hunk(uint32_t hunknum, hunk_location &location) const noexcept;
 	std::error_condition write_hunk(uint32_t hunknum, const void *buffer);
 	std::error_condition read_units(uint64_t unitnum, void *buffer, uint32_t count = 1);
 	std::error_condition write_units(uint64_t unitnum, const void *buffer, uint32_t count = 1);
@@ -433,6 +452,9 @@ private:
 	// caching
 	std::vector<uint8_t>    m_cache;            // single-hunk cache for partial reads/writes
 	uint32_t                m_cachehunk;        // which hunk is in the cache?
+
+	// lib-chd-kit
+	hunk_source *          m_hunk_source = nullptr; // consulted by read_hunk() first
 };
 
 

@@ -287,6 +287,8 @@ namespace LibChdKit.Interop
         [DllImport(Lib)] public static extern ChdmanStatus chdman_extract_ld(ContextHandle ctx, [In] ref ExtractLdOptions o);
         [DllImport(Lib)] public static extern ChdmanStatus chdman_extract_raw_to_sink(ContextHandle ctx, [In] ref ExtractRawOptions o, SinkCallback fn, IntPtr user);
         [DllImport(Lib)] public static extern ChdmanStatus chdman_extract_cd_to_sink(ContextHandle ctx, [In] ref ExtractCdOptions o, SinkCallback fn, IntPtr user);
+        [DllImport(Lib)] public static extern ChdmanStatus chdman_extract_raw_to_sink_verify(ContextHandle ctx, [In] ref ExtractRawOptions o, SinkCallback fn, IntPtr user, ref VerifyResult r);
+        [DllImport(Lib)] public static extern ChdmanStatus chdman_extract_cd_to_sink_verify(ContextHandle ctx, [In] ref ExtractCdOptions o, SinkCallback fn, IntPtr user, ref VerifyResult r);
 
         [DllImport(Lib)] public static extern void chdman_add_metadata_options_init(ref AddMetadataOptions o);
         [DllImport(Lib)] public static extern ChdmanStatus chdman_add_metadata(ContextHandle ctx, [In] ref AddMetadataOptions o);

@@ -12,6 +12,7 @@
 // Function and variable names follow upstream to make diffing easy.
 
 #include "chdman_core.h"
+#include "hunk_pipeline.h"
 
 #include "avhuff.h"
 #include "aviio.h"
@@ -709,6 +710,7 @@ public:
 							read_failed(util::string_format("Error opening input file (%s): %s", m_lastfile, filerr.message()), filerr);
 					}
 
+					uint32_t frames = 1; // frames handled this time round
 					if (src_frame_start < src_track_end)
 					{
 						// read it in, or pad if we're into the padframes
@@ -718,6 +720,13 @@ public:
 						}
 						else
 						{
+							// lib-chd-kit: the frames up to the next pad, split or
+							// track boundary are stored back to back, so read them
+							// with one call and spread them out to FRAME_SIZE apart
+							uint64_t const boundary = (src_frame_start < pad_track_start) ? (std::min)(pad_track_start, src_track_end) : src_track_end;
+							frames = uint32_t((std::min<uint64_t>)((boundary - src_frame_start) / bytesperframe, length_remaining / cdrom_file::FRAME_SIZE));
+							std::size_t const runbytes = std::size_t(frames * bytesperframe);
+							m_buffer.resize(runbytes);
 							std::error_condition err = m_file->seek(
 									(src_frame_start >= split_track_start)
 										? src_frame_start - split_track_start
@@ -725,25 +734,31 @@ public:
 									SEEK_SET);
 							std::size_t count = 0;
 							if (!err)
-								std::tie(err, count) = read(*m_file, dest, bytesperframe);
-							if (err || (count != bytesperframe))
+								std::tie(err, count) = read(*m_file, m_buffer.data(), runbytes);
+							if (err || (count != runbytes))
 								read_failed(util::string_format("Error reading input file (%s)", m_lastfile), err ? err : std::errc::io_error);
+							for (uint32_t frame = 0; frame < frames; frame++)
+								memcpy(dest + frame * cdrom_file::FRAME_SIZE, &m_buffer[frame * bytesperframe], bytesperframe);
 						}
 
 						// swap if appropriate
 						if (m_info.track[tracknum].swap)
-							for (uint32_t swapindex = 0; swapindex < 2352; swapindex += 2)
+							for (uint32_t frame = 0; frame < frames; frame++)
 							{
-								uint8_t temp = dest[swapindex];
-								dest[swapindex] = dest[swapindex + 1];
-								dest[swapindex + 1] = temp;
+								uint8_t *const framedest = dest + frame * cdrom_file::FRAME_SIZE;
+								for (uint32_t swapindex = 0; swapindex < 2352; swapindex += 2)
+								{
+									uint8_t temp = framedest[swapindex];
+									framedest[swapindex] = framedest[swapindex + 1];
+									framedest[swapindex + 1] = temp;
+								}
 							}
 					}
 
 					// advance
-					offset += cdrom_file::FRAME_SIZE;
-					dest += cdrom_file::FRAME_SIZE;
-					length_remaining -= cdrom_file::FRAME_SIZE;
+					offset += uint64_t(frames) * cdrom_file::FRAME_SIZE;
+					dest += frames * cdrom_file::FRAME_SIZE;
+					length_remaining -= frames * cdrom_file::FRAME_SIZE;
 					if (length_remaining == 0)
 						break;
 				}
@@ -760,6 +775,7 @@ private:
 	util::core_file::ptr          m_file;
 	cdrom_file::toc &             m_toc;
 	cdrom_file::track_input_info &m_info;
+	std::vector<uint8_t>          m_buffer; // frames read in one call (lib-chd-kit)
 };
 
 
@@ -1379,55 +1395,33 @@ info_result info(session &s, info_options const &opts)
 //  VERIFY
 //**************************************************************************
 
-verify_result verify(session &s, verify_options const &opts)
+namespace {
+
+// upstream do_verify's checks before reading: false, with the reason in
+// result.message, when there is nothing to verify
+bool verify_precheck(chd_file &input_chd, verify_result &result, util::sha1_t &raw_sha1)
 {
-	chd_file input_parent_chd;
-	chd_file input_chd;
-	open_parent_chd(opts.input_parent, input_parent_chd);
-
-	{
-		const uint32_t openflags = opts.fix ? (OPEN_FLAG_READ | OPEN_FLAG_WRITE) : OPEN_FLAG_READ;
-		util::core_file::ptr file;
-		std::error_condition err = util::core_file::open(opts.input, openflags, file);
-		if (!err)
-			err = input_chd.open(std::move(file), false, input_parent_chd.opened() ? &input_parent_chd : nullptr);
-		if (err)
-			fail(err, "Error opening CHD file (%s): %s", opts.input, err.message());
-	}
-
-	verify_result result;
+	result = verify_result();
 
 	// only makes sense for compressed CHDs with valid SHA-1's
 	if (!input_chd.compressed())
 	{
 		result.message = "No verification to be done; CHD is uncompressed";
-		return result;
+		return false;
 	}
-	util::sha1_t raw_sha1 = (input_chd.version() <= 3) ? input_chd.sha1() : input_chd.raw_sha1();
+	raw_sha1 = (input_chd.version() <= 3) ? input_chd.sha1() : input_chd.raw_sha1();
 	if (raw_sha1 == util::sha1_t::null)
 	{
 		result.message = "No verification to be done; CHD has no checksum";
-		return result;
+		return false;
 	}
 	result.header_raw_sha1 = raw_sha1.as_string();
+	return true;
+}
 
-	// read all the data and build up an SHA-1
-	std::vector<uint8_t> buffer((TEMP_BUFFER_SIZE / input_chd.hunk_bytes()) * input_chd.hunk_bytes());
-	util::sha1_creator rawsha1;
-	for (uint64_t offset = 0; offset < input_chd.logical_bytes(); )
-	{
-		s.progress(CHDMAN_PHASE_VERIFYING, double(offset) / double(input_chd.logical_bytes()));
-
-		uint32_t bytes_to_read = (std::min<uint64_t>)(buffer.size(), input_chd.logical_bytes() - offset);
-		std::error_condition err = input_chd.read_bytes(offset, &buffer[0], bytes_to_read);
-		if (err)
-			fail(err, "Error reading CHD file (%s): %s", opts.input, err.message());
-
-		rawsha1.append(&buffer[0], bytes_to_read);
-		offset += bytes_to_read;
-	}
-	s.progress(CHDMAN_PHASE_VERIFYING, 1.0, 0.0, true);
-	util::sha1_t computed_sha1 = rawsha1.finish();
+// upstream do_verify's comparison once all the data has been hashed
+void verify_compare(chd_file &input_chd, util::sha1_t raw_sha1, util::sha1_t computed_sha1, bool fix, verify_result &result)
+{
 	result.computed_raw_sha1 = computed_sha1.as_string();
 
 	if (raw_sha1 != computed_sha1)
@@ -1435,7 +1429,7 @@ verify_result verify(session &s, verify_options const &opts)
 		result.outcome = CHDMAN_VERIFY_RAW_MISMATCH;
 
 		// fixing the raw SHA-1 also fixes the overall one
-		if (opts.fix)
+		if (fix)
 		{
 			std::error_condition err = input_chd.set_raw_sha1(computed_sha1);
 			if (err)
@@ -1456,7 +1450,7 @@ verify_result verify(session &s, verify_options const &opts)
 			if (input_chd.sha1() != computed_overall_sha1)
 			{
 				result.outcome = CHDMAN_VERIFY_OVERALL_MISMATCH;
-				if (opts.fix)
+				if (fix)
 				{
 					std::error_condition err = input_chd.set_raw_sha1(computed_sha1);
 					if (err)
@@ -1466,6 +1460,101 @@ verify_result verify(session &s, verify_options const &opts)
 			}
 		}
 	}
+}
+
+// Verifying alongside an extraction (lib-chd-kit): the hunk pipeline hashes
+// every hunk as it passes, read by the extraction or not, so the CHD is
+// decoded once for both.
+class extract_verifier
+{
+public:
+	extract_verifier(session &s, chd_file &input_chd, std::string const &input, verify_result *result)
+		: m_session(s), m_chd(input_chd), m_input(input), m_result(result)
+	{
+		m_active = result && verify_precheck(input_chd, *result, m_raw_sha1);
+	}
+
+	bool active() const noexcept { return m_active; }
+
+	// once the extraction is done: hash what it skipped, then compare
+	void finish(std::unique_ptr<hunk_pipeline> &pipeline)
+	{
+		if (!m_active)
+		{
+			if (m_result && !m_result->message.empty())
+				m_session.info(m_result->message);
+			return;
+		}
+		util::sha1_t computed;
+		try
+		{
+			computed = pipeline->finish_hash([this] { m_session.check_cancel(); });
+		}
+		catch (std::error_condition const &err)
+		{
+			fail(err, "Error reading CHD file (%s): %s", m_input, err.message());
+		}
+		pipeline.reset();
+		verify_compare(m_chd, m_raw_sha1, computed, false, *m_result);
+	}
+
+private:
+	session &m_session;
+	chd_file &m_chd;
+	std::string const &m_input;
+	verify_result *m_result;
+	util::sha1_t m_raw_sha1;
+	bool m_active = false;
+};
+
+} // anonymous namespace
+
+verify_result verify(session &s, verify_options const &opts)
+{
+	chd_file input_parent_chd;
+	chd_file input_chd;
+	open_parent_chd(opts.input_parent, input_parent_chd);
+
+	{
+		const uint32_t openflags = opts.fix ? (OPEN_FLAG_READ | OPEN_FLAG_WRITE) : OPEN_FLAG_READ;
+		util::core_file::ptr file;
+		std::error_condition err = util::core_file::open(opts.input, openflags, file);
+		if (!err)
+			err = input_chd.open(std::move(file), false, input_parent_chd.opened() ? &input_parent_chd : nullptr);
+		if (err)
+			fail(err, "Error opening CHD file (%s): %s", opts.input, err.message());
+	}
+
+	verify_result result;
+	util::sha1_t raw_sha1;
+	if (!verify_precheck(input_chd, result, raw_sha1))
+		return result;
+
+	// read all the data and build up an SHA-1
+	util::sha1_t computed_sha1;
+	{
+		// lib-chd-kit: hunks are decoded ahead on the session's threads
+		auto const pipeline = hunk_pipeline::attach(input_chd, opts.input, 0, input_chd.hunk_count(), s.num_processors, false);
+
+		std::vector<uint8_t> buffer((TEMP_BUFFER_SIZE / input_chd.hunk_bytes()) * input_chd.hunk_bytes());
+		util::sha1_creator rawsha1;
+		for (uint64_t offset = 0; offset < input_chd.logical_bytes(); )
+		{
+			s.progress(CHDMAN_PHASE_VERIFYING, double(offset) / double(input_chd.logical_bytes()));
+
+			uint32_t bytes_to_read = (std::min<uint64_t>)(buffer.size(), input_chd.logical_bytes() - offset);
+			std::error_condition err = input_chd.read_bytes(offset, &buffer[0], bytes_to_read);
+			if (err)
+				fail(err, "Error reading CHD file (%s): %s", opts.input, err.message());
+
+			rawsha1.append(&buffer[0], bytes_to_read);
+			offset += bytes_to_read;
+		}
+		s.progress(CHDMAN_PHASE_VERIFYING, 1.0, 0.0, true);
+		computed_sha1 = rawsha1.finish();
+	}
+
+	verify_compare(input_chd, raw_sha1, computed_sha1, opts.fix, result);
 	return result;
 }
 
@@ -1993,6 +2082,14 @@ void extract_raw(session &s, extract_raw_options const &opts, extract_sink *sink
 	if (opts.output.empty())
 		fail(CHDMAN_ERR_INVALID_ARGUMENT, "Output file name is required");
 
+	// lib-chd-kit: hunks are decoded ahead on the session's threads; when
+	// verifying too, the pipeline covers (and hashes) the whole CHD
+	extract_verifier verifier(s, input_chd, opts.input, opts.verify);
+	uint32_t const hunkbytes = input_chd.hunk_bytes();
+	std::unique_ptr<hunk_pipeline> pipeline = verifier.active()
+			? hunk_pipeline::attach(input_chd, opts.input, 0, input_chd.hunk_count(), s.num_processors, true)
+			: hunk_pipeline::attach(input_chd, opts.input, uint32_t(input_start / hunkbytes), uint32_t((input_end + hunkbytes - 1) / hunkbytes), s.num_processors, false);
+
 	if (sink)
 	{
 		std::vector<uint8_t> buffer((TEMP_BUFFER_SIZE / input_chd.hunk_bytes()) * input_chd.hunk_bytes());
@@ -2010,6 +2107,7 @@ void extract_raw(session &s, extract_raw_options const &opts, extract_sink *sink
 			offset += bytes_to_read;
 		}
 		sink->end_file();
+		verifier.finish(pipeline);
 		s.progress(CHDMAN_PHASE_EXTRACTING, 1.0, 0.0, true);
 		return;
 	}
@@ -2053,6 +2151,7 @@ void extract_raw(session &s, extract_raw_options const &opts, extract_sink *sink
 	output_file.reset();
 	if (flusherr)
 		fail(flusherr, "Error writing to file; check disk space (%s)", opts.output);
+	verifier.finish(pipeline);
 	s.progress(CHDMAN_PHASE_EXTRACTING, 1.0, 0.0, true);
 	s.info("Extraction complete");
 	guard.dismiss();
@@ -2080,6 +2179,10 @@ void extract_cd(session &s, extract_cd_options const &opts, extract_sink *sink)
 		fail(CHDMAN_ERR_INVALID_ARGUMENT, "Output file name is required");
 	if (!sink)
 		check_existing_output_file(opts.force, opts.output);
+
+	// lib-chd-kit: decoding ahead (and verifying) starts with the data pass
+	extract_verifier verifier(s, input_chd, opts.input, opts.verify);
+	std::unique_ptr<hunk_pipeline> pipeline;
 
 	// determine output type based on the specified file extension
 	int mode = MODE_NORMAL;
@@ -2497,6 +2600,10 @@ void extract_cd(session &s, extract_cd_options const &opts, extract_sink *sink)
 				sink->end_file();
 		};
 
+		auto start_pipeline = [&] {
+			pipeline = hunk_pipeline::attach(input_chd, opts.input, 0, input_chd.hunk_count(), s.num_processors, verifier.active());
+		};
+
 		if (sink)
 		{
 			process_tracks(toc_out, false);
@@ -2505,10 +2612,12 @@ void extract_cd(session &s, extract_cd_options const &opts, extract_sink *sink)
 			sink->end_file();
 
 			toc_writer unused(nullptr);
+			start_pipeline();
 			process_tracks(unused, true);
 		}
 		else
 		{
+			start_pipeline();
 			process_tracks(toc_out, true);
 
 			// finish up
@@ -2522,6 +2631,7 @@ void extract_cd(session &s, extract_cd_options const &opts, extract_sink *sink)
 			if (flusherr)
 				fail(flusherr, "Error writing output files: %s", flusherr.message());
 		}
+		verifier.finish(pipeline);
 		s.progress(CHDMAN_PHASE_EXTRACTING, 1.0, 0.0, true);
 		s.info("Extraction complete");
 	}
