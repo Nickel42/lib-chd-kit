@@ -13,7 +13,13 @@
 #define FLAC__HAS_X86INTRIN 0
 #endif
 
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if (defined(__aarch64__) || defined(_M_ARM64)) && defined(_MSC_VER) && !defined(__clang__)
+/* lib-chd-kit: MSVC can't compile libFLAC's NEON code (GCC-style vector
+   initializers), so its ARM64 build uses the C code. See vendor/PATCHES.md. */
+#define FLAC__CPU_ARM64
+#define FLAC__HAS_NEONINTRIN 0
+#define FLAC__HAS_A64NEONINTRIN 0
+#elif defined(__aarch64__) || defined(_M_ARM64)
 #define FLAC__CPU_ARM64
 #define FLAC__HAS_NEONINTRIN 1
 #define FLAC__HAS_A64NEONINTRIN 1
