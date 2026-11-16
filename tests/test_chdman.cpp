@@ -658,6 +658,169 @@ void test_extract_to_sink()
 	CHECK(again.files.size() == 2);
 }
 
+// Extracts a raw CHD (or part of it) to memory through the sink, optionally
+// verifying it in the same pass.
+std::vector<uint8_t> extract_raw_bytes(chdman_context *ctx, const std::string &chd, chdman_status &status,
+	const char *parent = nullptr, uint64_t start_hunk = CHDMAN_UNSET, uint64_t length_hunks = CHDMAN_UNSET, chdman_verify_result *verify = nullptr)
+{
+	chdman_extract_raw_options ro;
+	chdman_extract_raw_options_init(&ro);
+	ro.input = chd.c_str();
+	ro.input_parent = parent;
+	ro.output = "mem.raw";
+	ro.range.start_hunk = start_hunk;
+	ro.range.length_hunks = length_hunks;
+	sink_files sink;
+	status = verify
+			? chdman_extract_raw_to_sink_verify(ctx, &ro, sink_files::callback, &sink, verify)
+			: chdman_extract_raw_to_sink(ctx, &ro, sink_files::callback, &sink);
+	return sink.files.size() == 1 ? sink.files[0].second : std::vector<uint8_t>();
+}
+
+void test_parallel_decode()
+{
+	// small hunks give many batches, and the image has stored, compressed and
+	// self-copied hunks
+	auto const data = make_raw_image(4 * 1024 * 1024);
+	write_file(path("par.img"), data);
+	std::string const img = path("par.img"), chd = path("par.chd");
+	{
+		context ctx;
+		chdman_create_raw_options o;
+		chdman_create_raw_options_init(&o);
+		o.input = img.c_str();
+		o.out.output = chd.c_str();
+		o.out.force = 1;
+		o.out.hunk_size = 2048;
+		o.unit_size = 512;
+		CHECK_OK(ctx, chdman_create_raw(ctx, &o));
+	}
+	std::string const header_sha1 = sha1_hex(data);
+
+	// a child CHD whose unchanged hunks are parent references, which the
+	// pipeline leaves to chd_file
+	auto child_data = data;
+	for (size_t i = 0; i < child_data.size(); i += 300000)
+		child_data[i] ^= 0x5a;
+	write_file(path("par_child.img"), child_data);
+	std::string const child = path("par_child.chd");
+	{
+		context ctx;
+		chdman_create_raw_options o;
+		chdman_create_raw_options_init(&o);
+		std::string const child_img = path("par_child.img");
+		o.input = child_img.c_str();
+		o.out.output = child.c_str();
+		o.out.output_parent = chd.c_str();
+		o.out.force = 1;
+		CHECK_OK(ctx, chdman_create_raw(ctx, &o));
+	}
+
+	// every thread count reads the same bytes: whole, a hunk range, and with a parent
+	for (int threads : { 1, 2, 3, 8, 0 })
+	{
+		context ctx;
+		chdman_context_set_num_processors(ctx, threads);
+		chdman_status st;
+		CHECK(extract_raw_bytes(ctx, chd, st) == data);
+		CHECK(st == CHDMAN_OK);
+		auto const part = extract_raw_bytes(ctx, chd, st, nullptr, 37, 700);
+		CHECK(st == CHDMAN_OK);
+		CHECK(part == std::vector<uint8_t>(data.begin() + 37 * 2048, data.begin() + (37 + 700) * 2048));
+		CHECK(extract_raw_bytes(ctx, child, st, chd.c_str()) == child_data);
+		CHECK(st == CHDMAN_OK);
+		CHECK(verify(ctx, chd) == CHDMAN_VERIFY_OK);
+
+		// verifying alongside the extraction checks the whole CHD, even for a range
+		chdman_verify_result vr;
+		chdman_verify_result_init(&vr);
+		CHECK(extract_raw_bytes(ctx, chd, st, nullptr, 5, 3, &vr).size() == 3 * 2048);
+		CHECK(st == CHDMAN_OK);
+		CHECK(vr.outcome == CHDMAN_VERIFY_OK);
+		CHECK_EQ_STR(vr.computed_raw_sha1, header_sha1);
+		CHECK_EQ_STR(vr.header_raw_sha1, header_sha1);
+		CHECK(std::strlen(vr.computed_sha1) == 40);
+
+		chdman_verify_result_init(&vr);
+		CHECK(extract_raw_bytes(ctx, child, st, chd.c_str(), CHDMAN_UNSET, CHDMAN_UNSET, &vr) == child_data);
+		CHECK(st == CHDMAN_OK);
+		CHECK(vr.outcome == CHDMAN_VERIFY_OK);
+		CHECK_EQ_STR(vr.computed_raw_sha1, sha1_hex(child_data));
+	}
+
+	// a damaged hunk fails verify, plain or fused, with any thread count; an
+	// extraction that doesn't reach it succeeds unless it verifies too
+	auto damaged = read_file(chd);
+	damaged[damaged.size() * 3 / 4] ^= 0xff;
+	std::string const bad = path("par_bad.chd");
+	write_file(bad, damaged);
+	chdman_status serial_status = CHDMAN_OK;
+	for (int threads : { 1, 8 })
+	{
+		context ctx;
+		chdman_context_set_num_processors(ctx, threads);
+		chdman_verify_options vo;
+		chdman_verify_options_init(&vo);
+		vo.input = bad.c_str();
+		chdman_verify_result vr;
+		chdman_verify_result_init(&vr);
+		chdman_status const st = chdman_verify(ctx, &vo, &vr);
+		CHECK(st != CHDMAN_OK);
+		if (threads == 1)
+			serial_status = st;
+		CHECK(st == serial_status);
+
+		chdman_status est;
+		CHECK(extract_raw_bytes(ctx, bad, est, nullptr, 0, 1) == std::vector<uint8_t>(data.begin(), data.begin() + 2048));
+		CHECK(est == CHDMAN_OK);
+		chdman_verify_result_init(&vr);
+		extract_raw_bytes(ctx, bad, est, nullptr, 0, 1, &vr);
+		CHECK(est == st);
+	}
+
+	// CD: cue/bin through the sink with verify, against the source bin
+	std::vector<uint8_t> bindata;
+	make_cue_bin(path("parcd.cue"), path("parcd.bin"), "parcd.bin", bindata);
+	std::string const cue = path("parcd.cue"), cdchd = path("parcd.chd");
+	{
+		context ctx;
+		chdman_create_cd_options co;
+		chdman_create_cd_options_init(&co);
+		co.input = cue.c_str();
+		co.out.output = cdchd.c_str();
+		co.out.force = 1;
+		CHECK_OK(ctx, chdman_create_cd(ctx, &co));
+	}
+	std::string const cd_raw_sha1 = info_raw_sha1(context(), cdchd);
+	for (int threads : { 1, 4 })
+	{
+		context ctx;
+		chdman_context_set_num_processors(ctx, threads);
+		chdman_extract_cd_options eo;
+		chdman_extract_cd_options_init(&eo);
+		std::string const out = path("parcd_out.cue");
+		eo.input = cdchd.c_str();
+		eo.output = out.c_str();
+		chdman_verify_result vr;
+		chdman_verify_result_init(&vr);
+		sink_files sink;
+		CHECK_OK(ctx, chdman_extract_cd_to_sink_verify(ctx, &eo, sink_files::callback, &sink, &vr));
+		CHECK(sink.files.size() == 2 && sink.files.back().second == bindata);
+		CHECK(vr.outcome == CHDMAN_VERIFY_OK);
+		CHECK_EQ_STR(vr.computed_raw_sha1, cd_raw_sha1);
+		CHECK_EQ_STR(vr.header_raw_sha1, cd_raw_sha1);
+
+		// to files, decoded ahead the same way
+		eo.force = 1;
+		CHECK_OK(ctx, chdman_extract_cd(ctx, &eo));
+		CHECK(read_file(path("parcd_out.bin")) == bindata);
+
+		// a result and a callback are required
+		CHECK(chdman_extract_cd_to_sink_verify(ctx, &eo, sink_files::callback, &sink, nullptr) == CHDMAN_ERR_INVALID_ARGUMENT);
+		CHECK(chdman_extract_cd_to_sink_verify(ctx, &eo, nullptr, nullptr, &vr) == CHDMAN_ERR_INVALID_ARGUMENT);
+	}
+}
+
 void test_dvd_and_hd()
 {
 	context ctx;
@@ -1010,6 +1173,7 @@ int main()
 		{ "metadata_and_fix", test_metadata_and_fix },
 		{ "cd_roundtrip", test_cd_roundtrip },
 		{ "extract_to_sink", test_extract_to_sink },
+		{ "parallel_decode", test_parallel_decode },
 		{ "dvd_and_hd", test_dvd_and_hd },
 		{ "ld_roundtrip", test_ld_roundtrip },
 		{ "errors_and_cancel", test_errors_and_cancel },

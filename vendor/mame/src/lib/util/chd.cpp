@@ -1024,6 +1024,14 @@ std::error_condition chd_file::read_hunk(uint32_t hunknum, void *buffer)
 	if (UNEXPECTED(hunknum >= m_hunkcount))
 		return std::error_condition(error::HUNK_OUT_OF_RANGE);
 
+	// lib-chd-kit: a hunk_source may have decoded this hunk already
+	if (m_hunk_source)
+	{
+		std::error_condition err;
+		if (m_hunk_source->supply_hunk(hunknum, buffer, err))
+			return err;
+	}
+
 	auto *const dest = reinterpret_cast<uint8_t *>(buffer);
 
 	// wrap this for clean reporting
@@ -1159,6 +1167,42 @@ std::error_condition chd_file::read_hunk(uint32_t hunknum, void *buffer)
 		// just return errors
 		return err;
 	}
+}
+
+// lib-chd-kit: where a v5 compressed CHD stores the data of a hunk, following
+// copies of other hunks in the same file. Returns false for parent references,
+// other CHD versions and uncompressed CHDs, which read_hunk() handles as usual.
+bool chd_file::locate_hunk(uint32_t hunknum, hunk_location &location) const noexcept
+{
+	if (m_version != 5 || !compressed())
+		return false;
+
+	// a copy refers to an earlier hunk; bound the walk all the same
+	for (uint32_t steps = 0; hunknum < m_hunkcount && steps < m_hunkcount; steps++)
+	{
+		uint8_t const *const rawmap = &m_rawmap[m_mapentrybytes * hunknum];
+		switch (rawmap[0])
+		{
+		case COMPRESSION_TYPE_0:
+		case COMPRESSION_TYPE_1:
+		case COMPRESSION_TYPE_2:
+		case COMPRESSION_TYPE_3:
+		case COMPRESSION_NONE:
+			location.codec = (rawmap[0] == COMPRESSION_NONE) ? -1 : rawmap[0];
+			location.length = (rawmap[0] == COMPRESSION_NONE) ? m_hunkbytes : get_u24be(&rawmap[1]);
+			location.offset = get_u48be(&rawmap[4]);
+			location.crc16 = get_u16be(&rawmap[10]);
+			return true;
+
+		case COMPRESSION_SELF:
+			hunknum = get_u48be(&rawmap[4]);
+			break;
+
+		default:
+			return false;
+		}
+	}
+	return false;
 }
 
 /**

@@ -17,6 +17,11 @@ from the upstream MAME sources at tag `mame0289`, not from a decompilation.
   go to a callback instead (the TOC first, then each bin in track order,
   byte-identical to the files), so a caller can hash or convert a disc
   without writing it to disk.
+- Verify and extract decode hunks ahead on the context's threads (one reader
+  thread keeps disk reads in order), and a streaming extraction can verify
+  the CHD in the same pass (`chdman_extract_cd_to_sink_verify`,
+  `chdman_extract_raw_to_sink_verify`), so hashing tracks and checking the
+  CHD decode it once.
 - `chdman-cli`: a chdman-compatible command line tool written in C on top of
   the C API.
 - Output is byte-identical to upstream chdman (see [Verification](#verification)).
@@ -126,7 +131,7 @@ and `chdman-cli.exe`.
 Which one to link on Windows:
 
 - **`chdkit.dll` (recommended).** It uses the static CRT, so it needs no
-  VC++ redistributable, and it exports only the 62 `chdman_*` functions, so
+  VC++ redistributable, and it exports only the 64 `chdman_*` functions, so
   it can't clash with anything in your app.
 - **`chdkit_static.lib`.** Define `CHDMAN_STATIC` before including
   `chdman.h` (the CMake target does this for you). It is built with the DLL
@@ -154,7 +159,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 Outputs: `build/libchdkit.so` (soname `libchdkit.so.1`), `build/libchdkit.a`
-and `build/chdman-cli`. The shared library exports only the 62 `chdman_*`
+and `build/chdman-cli`. The shared library exports only the 64 `chdman_*`
 functions (a linker version script, `cmake/chdman.map`, hides the rest) and
 needs the glibc and libstdc++ of the system it was built on or newer, so build
 on the oldest distribution you support. Link the static archive with
@@ -224,6 +229,14 @@ Rules:
 - `chdman_verify` returns `CHDMAN_OK` whenever verification ran. The verdict
   is in `result.outcome` (`OK`, `RAW_MISMATCH`, `OVERALL_MISMATCH`, `FIXED`,
   `NOT_APPLICABLE`).
+- `chdman_context_set_num_processors` limits the threads for compression and
+  for decoding in verify and extract (0 = all processors, 1 = decode on the
+  calling thread; at most 16). Each decode thread holds about 1 MiB of
+  hunks in flight.
+- `chdman_extract_cd_to_sink_verify` and `chdman_extract_raw_to_sink_verify`
+  stream like the `_to_sink` calls and also verify the CHD, as
+  `chdman_verify` without fix does, into a `chdman_verify_result`: every
+  hunk is hashed as the extraction passes it, read or not.
 - Informational lines chdman would print (e.g. "Compression: ...") go to
   the log callback, so a GUI can show or ignore them.
 
@@ -310,7 +323,9 @@ Ctrl-C cancels cleanly (the partial output is removed).
   - Write/flush errors at the end of extraction are reported.
   - Progress callbacks are throttled to 10 per second (chdman: 2).
   - The thread limit (`chdman_context_set_num_processors`) is per context
-    rather than a process-wide global.
+    rather than a process-wide global, and verify and extract use it too:
+    hunks are decoded ahead on several threads (upstream decodes them one
+    at a time). The bytes read are the same.
 - Metadata can only be added or removed in **uncompressed** CHDs. MAME
   opens compressed v5 CHDs read-only, and upstream `chdman addmeta`/`delmeta`
   fail the same way. Use `copy -c none` first if needed.
@@ -349,12 +364,12 @@ Run on macOS 27 (Apple silicon), universal Release build:
   commands through unmodified upstream `chdman.cpp` and through
   `chdman-cli`. All 17 outputs are byte-identical: CHDs from every create
   mode, copies, cue/toc/gdi extraction, raw and AVI extraction.
-- The dylib exports exactly the 62 `chdman_*` symbols on both slices. The
+- The dylib exports exactly the 64 `chdman_*` symbols on both slices. The
   prelinked static archive defines no other global symbols and links into a
   C program together with the system zlib.
 - Windows: the whole tree (library, DLL, CLI, tests, upstream reference)
   cross-compiles and links with mingw-w64 GCC 16, and the DLL exports
-  exactly the 62 API functions. **MSVC builds and the tests have not been run
+  exactly the 64 API functions. **MSVC builds and the tests have not been run
   on Windows yet.** Run the commands above (and `ctest`) on a Windows 11
   machine before shipping. The pinned SHA-1s in the tests catch any
   platform difference.

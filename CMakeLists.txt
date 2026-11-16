@@ -47,7 +47,8 @@ add_subdirectory(vendor)
 
 set(CHDMAN_SOURCES
   src/chdman_core.cpp
-  src/chdman_capi.cpp)
+  src/chdman_capi.cpp
+  src/hunk_pipeline.cpp)
 
 chdman_vendor_objects(CHDMAN_VENDOR_OBJECTS "")
 chdman_vendor_objects(CHDMAN_STATIC_VENDOR_OBJECTS "${CHDMAN_STATIC_VENDOR_SUFFIX}")
