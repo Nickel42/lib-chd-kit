@@ -20,6 +20,16 @@
 #include <iomanip>
 #include <sstream>
 
+// lib-chd-kit: SHA-NI intrinsics and CPU detection
+#if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
+#include <immintrin.h>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#else
+#include <cpuid.h>
+#endif
+#endif
+
 
 namespace util {
 
@@ -102,6 +112,144 @@ inline void sha1_process(std::array<uint32_t, 5> &st, uint32_t *data) noexcept
 	for (i = 0U; i < 5U; i++)
 		st[i] += d[i];
 }
+
+
+
+//-------------------------------------------------
+//  lib-chd-kit: SHA-1 with the x86 SHA extensions
+//  (SHA-NI), used for whole 64-byte blocks when the
+//  CPU has them. The state is h0..h4 in order.
+//-------------------------------------------------
+
+#if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
+#define LIBCHDKIT_SHA1_SHANI 1
+#if defined(__GNUC__) || defined(__clang__)
+#define LIBCHDKIT_SHANI_TARGET __attribute__((target("sha,sse4.1,ssse3")))
+#else
+#define LIBCHDKIT_SHANI_TARGET
+#endif
+
+bool sha1_shani_supported() noexcept
+{
+	static bool const supported = []
+	{
+#if defined(_MSC_VER)
+		int regs[4];
+		__cpuid(regs, 0);
+		if (regs[0] < 7)
+			return false;
+		__cpuid(regs, 1);
+		bool const sse41 = (regs[2] & (1 << 19)) != 0;
+		bool const ssse3 = (regs[2] & (1 << 9)) != 0;
+		__cpuidex(regs, 7, 0);
+		return sse41 && ssse3 && (regs[1] & (1 << 29)) != 0;
+#else
+		unsigned eax, ebx, ecx, edx;
+		if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx))
+			return false;
+		bool const sse41 = (ecx & (1u << 19)) != 0;
+		bool const ssse3 = (ecx & (1u << 9)) != 0;
+		if (!__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx))
+			return false;
+		return sse41 && ssse3 && (ebx & (1u << 29)) != 0;
+#endif
+	}();
+	return supported;
+}
+
+LIBCHDKIT_SHANI_TARGET void sha1_blocks_shani(uint32_t (&state)[5], const uint8_t *data, size_t blocks) noexcept
+{
+	__m128i const mask = _mm_set_epi64x(0x0001020304050607ULL, 0x08090a0b0c0d0e0fULL);
+	__m128i abcd = _mm_shuffle_epi32(_mm_loadu_si128(reinterpret_cast<const __m128i *>(state)), 0x1b);
+	__m128i e0 = _mm_set_epi32(int(state[4]), 0, 0, 0);
+	__m128i e1, msg0, msg1, msg2, msg3;
+
+	for ( ; blocks; blocks--, data += 64)
+	{
+		__m128i const abcd_save = abcd;
+		__m128i const e0_save = e0;
+
+		// rounds 0-3
+		msg0 = _mm_shuffle_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data + 0)), mask);
+		e0 = _mm_add_epi32(e0, msg0);
+		e1 = abcd;
+		abcd = _mm_sha1rnds4_epu32(abcd, e0, 0);
+
+		// rounds 4-7
+		msg1 = _mm_shuffle_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data + 16)), mask);
+		e1 = _mm_sha1nexte_epu32(e1, msg1);
+		e0 = abcd;
+		abcd = _mm_sha1rnds4_epu32(abcd, e1, 0);
+		msg0 = _mm_sha1msg1_epu32(msg0, msg1);
+
+		// rounds 8-11
+		msg2 = _mm_shuffle_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data + 32)), mask);
+		e0 = _mm_sha1nexte_epu32(e0, msg2);
+		e1 = abcd;
+		abcd = _mm_sha1rnds4_epu32(abcd, e0, 0);
+		msg1 = _mm_sha1msg1_epu32(msg1, msg2);
+		msg0 = _mm_xor_si128(msg0, msg2);
+
+		// rounds 12-15
+		msg3 = _mm_shuffle_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data + 48)), mask);
+		e1 = _mm_sha1nexte_epu32(e1, msg3);
+		e0 = abcd;
+		msg0 = _mm_sha1msg2_epu32(msg0, msg3);
+		abcd = _mm_sha1rnds4_epu32(abcd, e1, 0);
+		msg2 = _mm_sha1msg1_epu32(msg2, msg3);
+		msg1 = _mm_xor_si128(msg1, msg3);
+
+		// rounds 16-67: the same four steps with the message words rotating
+#define LIBCHDKIT_SHA1_STEP(ea, eb, ma, mb, mc, md, f) \
+		ea = _mm_sha1nexte_epu32(ea, ma); \
+		eb = abcd; \
+		mb = _mm_sha1msg2_epu32(mb, ma); \
+		abcd = _mm_sha1rnds4_epu32(abcd, ea, f); \
+		md = _mm_sha1msg1_epu32(md, ma); \
+		mc = _mm_xor_si128(mc, ma);
+
+		LIBCHDKIT_SHA1_STEP(e0, e1, msg0, msg1, msg2, msg3, 0) // 16-19
+		LIBCHDKIT_SHA1_STEP(e1, e0, msg1, msg2, msg3, msg0, 1) // 20-23
+		LIBCHDKIT_SHA1_STEP(e0, e1, msg2, msg3, msg0, msg1, 1) // 24-27
+		LIBCHDKIT_SHA1_STEP(e1, e0, msg3, msg0, msg1, msg2, 1) // 28-31
+		LIBCHDKIT_SHA1_STEP(e0, e1, msg0, msg1, msg2, msg3, 1) // 32-35
+		LIBCHDKIT_SHA1_STEP(e1, e0, msg1, msg2, msg3, msg0, 1) // 36-39
+		LIBCHDKIT_SHA1_STEP(e0, e1, msg2, msg3, msg0, msg1, 2) // 40-43
+		LIBCHDKIT_SHA1_STEP(e1, e0, msg3, msg0, msg1, msg2, 2) // 44-47
+		LIBCHDKIT_SHA1_STEP(e0, e1, msg0, msg1, msg2, msg3, 2) // 48-51
+		LIBCHDKIT_SHA1_STEP(e1, e0, msg1, msg2, msg3, msg0, 2) // 52-55
+		LIBCHDKIT_SHA1_STEP(e0, e1, msg2, msg3, msg0, msg1, 2) // 56-59
+		LIBCHDKIT_SHA1_STEP(e1, e0, msg3, msg0, msg1, msg2, 3) // 60-63
+		LIBCHDKIT_SHA1_STEP(e0, e1, msg0, msg1, msg2, msg3, 3) // 64-67
+#undef LIBCHDKIT_SHA1_STEP
+
+		// rounds 68-71
+		e1 = _mm_sha1nexte_epu32(e1, msg1);
+		e0 = abcd;
+		msg2 = _mm_sha1msg2_epu32(msg2, msg1);
+		abcd = _mm_sha1rnds4_epu32(abcd, e1, 3);
+		msg3 = _mm_xor_si128(msg3, msg1);
+
+		// rounds 72-75
+		e0 = _mm_sha1nexte_epu32(e0, msg2);
+		e1 = abcd;
+		msg3 = _mm_sha1msg2_epu32(msg3, msg2);
+		abcd = _mm_sha1rnds4_epu32(abcd, e0, 3);
+
+		// rounds 76-79
+		e1 = _mm_sha1nexte_epu32(e1, msg3);
+		e0 = abcd;
+		abcd = _mm_sha1rnds4_epu32(abcd, e1, 3);
+
+		// add this block's result to the state
+		e0 = _mm_sha1nexte_epu32(e0, e0_save);
+		abcd = _mm_add_epi32(abcd, abcd_save);
+	}
+
+	_mm_storeu_si128(reinterpret_cast<__m128i *>(state), _mm_shuffle_epi32(abcd, 0x1b));
+	state[4] = uint32_t(_mm_extract_epi32(e0, 3));
+}
+#endif // x86
 
 } // anonymous namespace
 
@@ -204,6 +352,18 @@ void sha1_creator::append(const void *data, uint32_t length) noexcept
 				reinterpret_cast<uint8_t *>(m_buf)[(offset + residual) ^ swizzle] = reinterpret_cast<const uint8_t *>(data)[offset];
 			sha1_process(m_st, m_buf);
 		}
+#ifdef LIBCHDKIT_SHA1_SHANI
+		// lib-chd-kit: whole blocks straight from the input with SHA-NI
+		if (((length - offset) >= 64U) && sha1_shani_supported())
+		{
+			uint32_t const blocks = (length - offset) / 64U;
+			uint32_t state[5] = { m_st[4], m_st[3], m_st[2], m_st[1], m_st[0] };
+			sha1_blocks_shani(state, reinterpret_cast<const uint8_t *>(data) + offset, blocks);
+			for (unsigned i = 0U; i < 5U; i++)
+				m_st[4U - i] = state[i];
+			offset += blocks * 64U;
+		}
+#endif
 		while ((length - offset) >= 64U)
 		{
 			for (residual = 0U; residual < 64U; residual++, offset++)

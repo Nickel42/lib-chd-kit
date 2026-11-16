@@ -123,7 +123,8 @@ first:
   extra slot for the thread that waits on the work queue (otherwise hosts
   with 18+ CPUs crash on cancel); and a `hunk_source` hook plus
   `locate_hunk()` on `chd_file`, so `src/hunk_pipeline.cpp` can decode hunks
-  on other threads for verify and extract. See `vendor/PATCHES.md`.
+  on other threads for verify and extract. Outside `chd.*`, `hashing.cpp`
+  uses SHA-NI for SHA-1 when the CPU has it. See `vendor/PATCHES.md`.
   None of them changes the bytes written; the parity test proves it.
 - **Metadata editing:** add and delete only work on *uncompressed* CHDs.
   This is upstream behavior (MAME opens compressed v5 CHDs read-only), not
@@ -139,5 +140,5 @@ first:
 ## Updating to a newer MAME
 
 `vendor/PATCHES.md` has the procedure: sparse checkout, re-copy, re-apply
-the four `chd.*` patches, port any `chdman.cpp` changes into
+the four `chd.*` patches and the `hashing.cpp` one, port any `chdman.cpp` changes into
 `src/chdman_core.cpp`, then run the parity test.

@@ -38,6 +38,16 @@ Files under `vendor/mame/` are unmodified except for the following.
    `read_hunk()`. Parent references and anything else `locate_hunk()`
    declines are still decoded by `read_hunk()` itself.
 
+## `src/lib/util/hashing.cpp`
+
+5. `sha1_creator::append()` hashes whole 64-byte blocks with the x86 SHA
+   extensions (SHA-NI) when the CPU has them, checked once with `cpuid`
+   (marked "lib-chd-kit"). Partial blocks, other CPUs and other
+   architectures use the original scalar code. SHA-1 is the serial step of
+   verify once hunks are decoded on several threads, and SHA-NI is about
+   three times faster. The digests are the same; the pinned header SHA-1s
+   in `tests/test_chdman.cpp` would catch a difference.
+
 None of these changes affects the bytes written to CHD files or read from
 them; `tests/parity.cmake`
 checks that output is byte-identical to the unmodified upstream `chdman`
@@ -55,7 +65,8 @@ logic.
 ## Updating to a newer MAME
 
 1. Sparse-checkout the new tag (see the paths in `vendor/CMakeLists.txt`).
-2. Re-copy the files and re-apply the four `chd.*` changes above.
+2. Re-copy the files and re-apply the four `chd.*` changes and the
+   `hashing.cpp` change above.
 3. Diff `src/tools/chdman.cpp` against the previous version and port any
    logic changes into `src/chdman_core.cpp`. That file keeps upstream's
    function names to make this easier.
