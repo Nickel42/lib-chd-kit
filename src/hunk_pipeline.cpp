@@ -186,11 +186,13 @@ void hunk_pipeline::read_batch(uint32_t b)
 		while (j < bt.count && bt.entries[j].located && bt.entries[j].loc.offset == head.loc.offset + length)
 			length += bt.entries[j++].loc.length;
 
+		// a failed or short read covers the whole run, but serially only the
+		// hunks actually affected would fail: leave the run to chd_file, which
+		// reads each hunk on its own with upstream's error handling
 		auto const [readerr, actual] = util::read_at(*m_file, head.loc.offset, bt.stored.data() + head.stored_offset, size_t(length));
-		std::error_condition const err = readerr ? readerr : (actual != length) ? std::error_condition(std::errc::io_error) : std::error_condition();
-		if (err)
+		if (readerr || (actual != length))
 			for (uint32_t k = i; k < j; k++)
-				bt.entries[k].err = err;
+				bt.entries[k].located = false;
 		i = j;
 	}
 }
@@ -228,13 +230,11 @@ void hunk_pipeline::decode_batch(batch &bt, decoder_set &decoders)
 		{
 			e.err = err;
 		}
-		catch (std::bad_alloc const &)
-		{
-			e.err = std::errc::not_enough_memory;
-		}
 		catch (...)
 		{
-			e.err = chd_file::error::DECOMPRESSION_ERROR;
+			// read_hunk() lets anything else propagate: decode it there again,
+			// on the calling thread, so the caller sees what it saw before
+			e.located = false;
 		}
 	}
 }
