@@ -710,6 +710,7 @@ public:
 							read_failed(util::string_format("Error opening input file (%s): %s", m_lastfile, filerr.message()), filerr);
 					}
 
+					uint32_t frames = 1; // frames handled this time round
 					if (src_frame_start < src_track_end)
 					{
 						// read it in, or pad if we're into the padframes
@@ -719,6 +720,13 @@ public:
 						}
 						else
 						{
+							// lib-chd-kit: the frames up to the next pad, split or
+							// track boundary are stored back to back, so read them
+							// with one call and spread them out to FRAME_SIZE apart
+							uint64_t const boundary = (src_frame_start < pad_track_start) ? (std::min)(pad_track_start, src_track_end) : src_track_end;
+							frames = uint32_t((std::min<uint64_t>)((boundary - src_frame_start) / bytesperframe, length_remaining / cdrom_file::FRAME_SIZE));
+							std::size_t const runbytes = std::size_t(frames * bytesperframe);
+							m_buffer.resize(runbytes);
 							std::error_condition err = m_file->seek(
 									(src_frame_start >= split_track_start)
 										? src_frame_start - split_track_start
@@ -726,25 +734,31 @@ public:
 									SEEK_SET);
 							std::size_t count = 0;
 							if (!err)
-								std::tie(err, count) = read(*m_file, dest, bytesperframe);
-							if (err || (count != bytesperframe))
+								std::tie(err, count) = read(*m_file, m_buffer.data(), runbytes);
+							if (err || (count != runbytes))
 								read_failed(util::string_format("Error reading input file (%s)", m_lastfile), err ? err : std::errc::io_error);
+							for (uint32_t frame = 0; frame < frames; frame++)
+								memcpy(dest + frame * cdrom_file::FRAME_SIZE, &m_buffer[frame * bytesperframe], bytesperframe);
 						}
 
 						// swap if appropriate
 						if (m_info.track[tracknum].swap)
-							for (uint32_t swapindex = 0; swapindex < 2352; swapindex += 2)
+							for (uint32_t frame = 0; frame < frames; frame++)
 							{
-								uint8_t temp = dest[swapindex];
-								dest[swapindex] = dest[swapindex + 1];
-								dest[swapindex + 1] = temp;
+								uint8_t *const framedest = dest + frame * cdrom_file::FRAME_SIZE;
+								for (uint32_t swapindex = 0; swapindex < 2352; swapindex += 2)
+								{
+									uint8_t temp = framedest[swapindex];
+									framedest[swapindex] = framedest[swapindex + 1];
+									framedest[swapindex + 1] = temp;
+								}
 							}
 					}
 
 					// advance
-					offset += cdrom_file::FRAME_SIZE;
-					dest += cdrom_file::FRAME_SIZE;
-					length_remaining -= cdrom_file::FRAME_SIZE;
+					offset += uint64_t(frames) * cdrom_file::FRAME_SIZE;
+					dest += frames * cdrom_file::FRAME_SIZE;
+					length_remaining -= frames * cdrom_file::FRAME_SIZE;
 					if (length_remaining == 0)
 						break;
 				}
@@ -761,6 +775,7 @@ private:
 	util::core_file::ptr          m_file;
 	cdrom_file::toc &             m_toc;
 	cdrom_file::track_input_info &m_info;
+	std::vector<uint8_t>          m_buffer; // frames read in one call (lib-chd-kit)
 };
 
 
