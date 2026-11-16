@@ -1,0 +1,143 @@
+name: Release
+
+# Push a tag such as v1.1.0 to publish (Actions › Release › Run workflow builds the same files
+# as workflow artifacts, without a release). The workflow:
+#  - builds the library and chdman-cli for Windows (x64, Arm64), macOS (universal) and Linux
+#    (x64, Arm64), runs ctest where it can, and archives what `cmake --install` lays out
+#    (shared and static libraries, chdman.h, the CMake package, chdman-cli, licenses),
+#  - packs the LibChdKit NuGet package with the Windows and macOS native libraries,
+#  - attaches all of it to a GitHub release,
+#  - pushes the package to nuget.org if the NUGET_API_KEY repository secret is set.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  native:
+    name: Native ${{ matrix.rid }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64,     os: windows-latest, configure: "-A x64",   test: true,  lib: build/Release/chdkit.dll }
+          # Cross-compiled on x64, so its tests can't run here.
+          - { rid: win-arm64,   os: windows-latest, configure: "-A ARM64", test: false, lib: build/Release/chdkit.dll }
+          - { rid: osx,         os: macos-latest,   configure: "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64", test: true, lib: build/libchdkit.dylib }
+          # The oldest supported Ubuntu LTS images, so the library runs on that glibc or newer.
+          - { rid: linux-x64,   os: ubuntu-22.04,     configure: "", test: true, lib: build/libchdkit.so }
+          - { rid: linux-arm64, os: ubuntu-22.04-arm, configure: "", test: true, lib: build/libchdkit.so }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version from tag
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF" == refs/tags/v* ]] || v=dev
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+      - name: Configure
+        shell: bash
+        run: cmake -S . -B build ${{ matrix.configure }} -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: ctest
+        if: matrix.test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Archive
+        shell: bash
+        run: |
+          cmake --install build --config Release --prefix "stage/lib-chd-kit-$VERSION-${{ matrix.rid }}"
+          mkdir -p dist
+          cd stage
+          if [[ "${{ matrix.rid }}" == win-* ]]; then
+            7z a "../dist/lib-chd-kit-$VERSION-${{ matrix.rid }}.zip" "lib-chd-kit-$VERSION-${{ matrix.rid }}"
+          else
+            tar -czf "../dist/lib-chd-kit-$VERSION-${{ matrix.rid }}.tar.gz" "lib-chd-kit-$VERSION-${{ matrix.rid }}"
+          fi
+      - name: Native library for the NuGet package
+        shell: bash
+        run: mkdir -p "native/${{ matrix.rid }}" && cp "${{ matrix.lib }}" "native/${{ matrix.rid }}/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.rid }}
+          path: dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: native/${{ matrix.rid }}/*
+          if-no-files-found: error
+
+  package:
+    name: NuGet package
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: artifacts/native
+      - name: Lay out artifacts/native/<rid>
+        run: for d in artifacts/native/native-*; do mv "$d" "artifacts/native/${d##*/native-}"; done
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Pack
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF" == refs/tags/v* ]] || v=0.0.0-dev
+          dotnet pack bindings/csharp/LibChdKit/LibChdKit.csproj -c Release -o packages -p:Version="$v"
+      - name: The native libraries are in the package
+        run: |
+          unzip -l packages/*.nupkg | tee nupkg.txt
+          for f in runtimes/win-x64/native/chdkit.dll runtimes/win-arm64/native/chdkit.dll runtimes/osx/native/libchdkit.dylib; do
+            grep -q "$f" nupkg.txt || { echo "missing $f"; exit 1; }
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: packages/*.nupkg
+
+  publish:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [native, package]
+    runs-on: ubuntu-latest
+    env:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "{archive-*,package}"
+          path: dist
+          merge-multiple: true
+      - uses: actions/setup-dotnet@v4
+        if: env.NUGET_API_KEY != ''
+        with:
+          dotnet-version: 10.0.x
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A semver pre-release (v1.2.0-rc.1) is published as a GitHub pre-release, so it never
+          # becomes the repository's "Latest" release. A release that already exists for the tag
+          # (made by hand before this workflow existed) gets the files added instead.
+          flags=()
+          if [[ "$GITHUB_REF_NAME" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+- ]]; then flags+=(--prerelease); fi
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes "${flags[@]}"
+          fi
+      - name: nuget.org
+        if: env.NUGET_API_KEY != ''
+        run: dotnet nuget push "dist/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
